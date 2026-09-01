@@ -1,11 +1,11 @@
 import { useEffect, useState } from "react";
+import { getJson } from "./api/client";
 
 function App() {
   const [message, setMessage] = useState("Connecting to backend...");
 
   useEffect(() => {
-    fetch("http://127.0.0.1:8000/api/test")
-      .then((response) => response.json())
+    getJson("/api/test")
       .then((data) => {
         setMessage(data.message);
       })
