@@ -7,6 +7,7 @@ from app.models import BookingStatus, QueueEntry, QueueStatus
 from app.repositories import bookings as booking_repository
 from app.repositories import procurement as procurement_repository
 from app.repositories import queue as queue_repository
+from app.services import throughput as throughput_service
 
 
 @dataclass
@@ -96,13 +97,21 @@ def start_serving(session: Session, queue_entry_id: int) -> QueueEntry:
 
 
 def complete_service(session: Session, queue_entry_id: int) -> QueueEntry:
-    return _transition_queue_entry(
+    queue_entry = _transition_queue_entry(
         session,
         queue_entry_id,
         allowed_statuses=(QueueStatus.SERVING,),
         target_status=QueueStatus.DONE,
         booking_status=BookingStatus.COMPLETED,
     )
+    # Every completion is a fresh throughput data point, so keep the
+    # centre's snapshot current as part of the same workflow instead of
+    # requiring a separate background job for this prototype. This is a
+    # best-effort refresh: recalculate_throughput() itself decides whether
+    # there's enough history yet, and simply leaves the existing snapshot
+    # (or the ETA service's fallback default) in place if not.
+    throughput_service.recalculate_throughput(session, queue_entry.centre_id)
+    return queue_entry
 
 
 def mark_no_show(session: Session, queue_entry_id: int) -> QueueEntry:
