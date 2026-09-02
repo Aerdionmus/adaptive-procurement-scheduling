@@ -106,14 +106,40 @@ button {
 
 /* ==========================================================================
    App shell
+   --------------------------------------------------------------------------
+   Breakpoints:
+     - default   : phone,  farmer-first, bottom nav
+     - >=640px   : tablet, same structure but with more breathing room and
+                   multi-column content grids
+     - >=1024px  : desktop, full-width application frame with a persistent
+                   sidebar (bottom nav is hidden). The sidebar is written so
+                   a future Staff/Admin workspace can be added alongside the
+                   farmer nav without restructuring this file.
    ========================================================================== */
 .app-shell {
   display: flex;
   flex-direction: column;
   min-height: 100dvh;
-  max-width: 480px;
-  margin: 0 auto;
+  width: 100%;
   background: var(--color-surface);
+}
+
+.app-shell__body {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}
+
+/* ---- Sidebar (desktop only) -------------------------------------------- */
+.app-shell__sidebar {
+  display: none;
+}
+
+.app-shell__main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
 }
 
 .app-shell__topbar {
@@ -148,12 +174,18 @@ button {
   padding: 20px 16px 24px;
 }
 
+.app-shell__content-inner {
+  width: 100%;
+}
+
+/* ---- Bottom nav (mobile + tablet) --------------------------------------- */
 .app-shell__nav {
   display: flex;
   border-top: 1px solid var(--color-border);
   background: var(--color-surface);
   position: sticky;
   bottom: 0;
+  padding-bottom: env(safe-area-inset-bottom, 0);
 }
 
 .app-shell__nav-item {
@@ -189,30 +221,206 @@ button {
   border-radius: var(--radius-sm);
   color: var(--color-ink);
   cursor: pointer;
+  min-width: 40px;
+  min-height: 40px;
+  align-items: center;
+  justify-content: center;
 }
 
 .icon-button:hover {
   background: var(--color-surface-tint);
 }
 
+/* ---- Tablet: same structure, more horizontal room ---------------------- */
 @media (min-width: 640px) {
   body {
     background: var(--color-bg-desktop);
+  }
+
+  .app-shell__topbar {
+    padding: 16px 24px;
+  }
+
+  .app-shell__content {
+    padding: 28px 32px 32px;
     display: flex;
     justify-content: center;
   }
 
+  .app-shell__content-inner {
+    max-width: 640px;
+  }
+
+  .app-shell__nav {
+    justify-content: center;
+    gap: 4px;
+  }
+
+  .app-shell__nav-item {
+    flex: 0 0 120px;
+  }
+}
+
+/* ---- Desktop: full application layout, no phone-shaped container ------- */
+@media (min-width: 1024px) {
+  body {
+    background: var(--color-bg-desktop);
+  }
+
   .app-shell {
-    min-height: 92dvh;
-    margin: 4dvh auto;
-    border: 1px solid var(--color-border);
-    border-radius: 20px;
-    overflow: hidden;
-    box-shadow: 0 20px 45px rgba(28, 43, 34, 0.12);
+    min-height: 100dvh;
+  }
+
+  .app-shell {
+    background: var(--color-bg-desktop);
+  }
+
+  .app-shell__body {
+    max-width: 1400px;
+    width: 100%;
+    margin: 0 auto;
+    background: var(--color-surface);
+    border-left: 1px solid var(--color-border);
+    border-right: 1px solid var(--color-border);
+  }
+
+  /* Sidebar replaces the bottom nav entirely on desktop. */
+  .app-shell__sidebar {
+    display: flex;
+    flex-direction: column;
+    width: 260px;
+    flex-shrink: 0;
+    padding: 24px 16px;
+    gap: 28px;
+    border-right: 1px solid var(--color-border);
+    background: var(--color-surface);
+  }
+
+  .app-shell__sidebar-brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 0 8px;
+    font-weight: 700;
+    font-size: 1.02rem;
+    color: var(--color-ink);
+  }
+
+  .app-shell__sidebar-brand svg {
+    width: 24px;
+    height: 24px;
+    color: var(--color-primary);
+    flex-shrink: 0;
+  }
+
+  .app-shell__sidebar-nav {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .app-shell__sidebar-heading {
+    margin: 4px 8px 6px;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--color-text-soft);
+  }
+
+  .app-shell__sidebar-link {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 12px;
+    border: none;
+    background: none;
+    border-radius: var(--radius-sm);
+    color: var(--color-text);
+    font-weight: 600;
+    font-size: 0.92rem;
+    cursor: pointer;
+    text-align: left;
+    min-height: 44px;
+  }
+
+  .app-shell__sidebar-link svg {
+    width: 20px;
+    height: 20px;
+    flex-shrink: 0;
+    color: var(--color-text-soft);
+  }
+
+  .app-shell__sidebar-link:hover {
+    background: var(--color-surface-tint);
+  }
+
+  .app-shell__sidebar-link--active {
+    background: var(--color-primary-tint);
+    color: var(--color-primary-dark);
+  }
+
+  .app-shell__sidebar-link--active svg {
+    color: var(--color-primary-dark);
+  }
+
+  /* Reserved space for future Staff/Admin dashboards - visible so the
+     product's direction is clear, but visually muted and non-interactive
+     since the workspace doesn't exist yet. */
+  .app-shell__sidebar-future {
+    margin-top: auto;
+    padding-top: 16px;
+    border-top: 1px solid var(--color-border);
+  }
+
+  .app-shell__sidebar-future-link {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    border-radius: var(--radius-sm);
+    color: var(--color-text-soft);
+  }
+
+  .app-shell__sidebar-future-link svg {
+    width: 18px;
+    height: 18px;
+    flex-shrink: 0;
+  }
+
+  .app-shell__sidebar-future-link span:nth-child(2) {
+    flex: 1;
+    font-size: 0.88rem;
+    font-weight: 600;
+  }
+
+  .app-shell__sidebar-future-tag {
+    font-size: 0.68rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+    background: var(--color-neutral-bg);
+    color: var(--color-neutral);
+    padding: 3px 8px;
+    border-radius: var(--radius-pill);
   }
 
   .app-shell__topbar {
-    border-radius: 20px 20px 0 0;
+    padding: 18px 40px;
+  }
+
+  .app-shell__content {
+    padding: 32px 40px 40px;
+    justify-content: flex-start;
+  }
+
+  .app-shell__content-inner {
+    max-width: 880px;
+  }
+
+  /* The bottom nav is fully replaced by the sidebar on desktop. */
+  .app-shell__nav {
+    display: none;
   }
 }
 
@@ -295,6 +503,16 @@ button {
   margin-top: 4px;
 }
 
+@media (min-width: 640px) {
+  .screen__actions {
+    flex-direction: row;
+  }
+
+  .screen__actions .btn {
+    flex: 1;
+  }
+}
+
 .screen__step {
   display: flex;
   flex-direction: column;
@@ -314,6 +532,22 @@ button {
 
 .screen__step-actions .btn {
   flex: 1;
+}
+
+/* Track Procurement: two content columns on desktop only. */
+.screen__track-col {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+@media (min-width: 1024px) {
+  .screen--track {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    align-items: start;
+    gap: 24px;
+  }
 }
 
 /* ==========================================================================
@@ -441,6 +675,12 @@ button {
   margin: 0;
   padding-top: 14px;
   border-top: 1px dashed var(--color-border);
+}
+
+@media (min-width: 640px) {
+  .booking-summary__details {
+    grid-template-columns: repeat(4, 1fr);
+  }
 }
 
 .booking-summary__details dt {
@@ -709,6 +949,12 @@ button {
   margin: 4px 0 0;
 }
 
+@media (min-width: 640px) {
+  .scheduling-alert__details {
+    grid-template-columns: repeat(4, 1fr);
+  }
+}
+
 .scheduling-alert__details dt {
   font-size: 0.75rem;
   color: var(--color-text-soft);
@@ -823,6 +1069,28 @@ button {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
   gap: 10px;
+}
+
+@media (min-width: 640px) {
+  .option-list--grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+
+  .option-list:not(.option-list--grid) {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    align-items: stretch;
+  }
+}
+
+@media (min-width: 1024px) {
+  .option-list--grid {
+    grid-template-columns: repeat(4, 1fr);
+  }
+
+  .option-list:not(.option-list--grid) {
+    grid-template-columns: repeat(3, 1fr);
+  }
 }
 
 .option-card {
@@ -1096,6 +1364,13 @@ button {
   display: flex;
   flex-direction: column;
   gap: 12px;
+}
+
+@media (min-width: 1024px) {
+  .history-list {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+  }
 }
 
 .history-list__item {

@@ -153,3 +153,16 @@ export function IconRefresh(props) {
     </svg>
   );
 }
+
+// Reserved for the desktop sidebar's Staff/Admin placeholder section - not
+// used by any farmer-facing screen.
+export function IconLayoutGrid(props) {
+  return (
+    <svg {...base} {...props}>
+      <rect x="3.5" y="3.5" width="7" height="7" rx="1.2" />
+      <rect x="13.5" y="3.5" width="7" height="7" rx="1.2" />
+      <rect x="3.5" y="13.5" width="7" height="7" rx="1.2" />
+      <rect x="13.5" y="13.5" width="7" height="7" rx="1.2" />
+    </svg>
+  );
+}

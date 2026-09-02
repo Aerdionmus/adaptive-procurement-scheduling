@@ -59,44 +59,51 @@ export function TrackProcurement({ bookingId }) {
   const { booking, slot, centre, queueEntry, eta } = data;
 
   return (
-    <div className="screen">
-      <BookingSummary booking={booking} slot={slot} centre={centre} compact />
+    <div className="screen screen--track">
+      {/* Two columns on wide screens: progress on the left, live queue /
+          adaptive scheduling on the right. Stacks to a single column on
+          mobile/tablet - no content is reordered, only reflowed. */}
+      <div className="screen__track-col">
+        <BookingSummary booking={booking} slot={slot} centre={centre} compact />
 
-      <StatusTimeline bookingStatus={booking.status} queueStatus={queueEntry?.queue_status} />
+        <StatusTimeline bookingStatus={booking.status} queueStatus={queueEntry?.queue_status} />
 
-      {booking.status === "BOOKED" && (
-        <div className="check-in-panel">
-          <p>Arrived at the centre? Check in to join the live queue.</p>
-          <button
-            type="button"
-            className="btn btn--primary btn--block"
-            onClick={handleCheckIn}
-            disabled={checkingIn}
-          >
-            {checkingIn ? "Checking in\u2026" : "Check in at centre"}
-          </button>
-          {checkInError && <p className="form__error">{checkInError}</p>}
-        </div>
-      )}
+        {booking.status === "BOOKED" && (
+          <div className="check-in-panel">
+            <p>Arrived at the centre? Check in to join the live queue.</p>
+            <button
+              type="button"
+              className="btn btn--primary btn--block"
+              onClick={handleCheckIn}
+              disabled={checkingIn}
+            >
+              {checkingIn ? "Checking in\u2026" : "Check in at centre"}
+            </button>
+            {checkInError && <p className="form__error">{checkInError}</p>}
+          </div>
+        )}
+      </div>
 
-      {queueEntry && (
-        <QueueStatus
-          queueEntry={queueEntry}
-          centreCode={centre?.code}
-          farmersAhead={eta?.farmers_ahead ?? 0}
-        />
-      )}
+      <div className="screen__track-col">
+        {queueEntry && (
+          <QueueStatus
+            queueEntry={queueEntry}
+            centreCode={centre?.code}
+            farmersAhead={eta?.farmers_ahead ?? 0}
+          />
+        )}
 
-      {eta && (
-        <ETAIndicator
-          estimatedWaitMinutes={eta.estimated_wait_minutes}
-          estimatedCompletion={queueEntry ? eta.estimatedCompletionAt : null}
-        />
-      )}
+        {eta && (
+          <ETAIndicator
+            estimatedWaitMinutes={eta.estimated_wait_minutes}
+            estimatedCompletion={queueEntry ? eta.estimatedCompletionAt : null}
+          />
+        )}
 
-      {!scheduleLoading && scheduleStatus && (
-        <SchedulingAlert status={scheduleStatus} onReviewRecommendation={handleReviewRecommendation} />
-      )}
+        {!scheduleLoading && scheduleStatus && (
+          <SchedulingAlert status={scheduleStatus} onReviewRecommendation={handleReviewRecommendation} />
+        )}
+      </div>
     </div>
   );
 }
