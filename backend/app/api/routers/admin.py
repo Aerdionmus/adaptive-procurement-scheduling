@@ -4,5 +4,5 @@ router = APIRouter()
 
 
 @router.get("/")
-def admin_placeholder() -> dict[str, str]:
+async def admin_placeholder() -> dict[str, str]:
     return {"status": "admin module foundation ready"}

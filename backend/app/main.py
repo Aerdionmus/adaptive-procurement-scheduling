@@ -19,11 +19,11 @@ def create_application() -> FastAPI:
     application.include_router(api_router, prefix=settings.api_prefix)
 
     @application.get("/")
-    def root() -> dict[str, str]:
+    async def root() -> dict[str, str]:
         return {"message": "Adaptive Procurement Scheduling API is running -v2"}
 
     @application.get("/health")
-    def health() -> dict[str, str]:
+    async def health() -> dict[str, str]:
         return {"status": "healthy"}
 
     return application

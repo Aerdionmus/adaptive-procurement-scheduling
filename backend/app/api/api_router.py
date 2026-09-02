@@ -2,6 +2,7 @@ from fastapi import APIRouter
 
 from app.api.routers import (
     admin,
+    bookings,
     centres,
     farmers,
     notifications,
@@ -15,6 +16,7 @@ api_router = APIRouter()
 api_router.include_router(system.router, tags=["system"])
 api_router.include_router(farmers.router, prefix="/farmers", tags=["farmers"])
 api_router.include_router(centres.router, prefix="/centres", tags=["centres"])
+api_router.include_router(bookings.router, prefix="/bookings", tags=["bookings"])
 api_router.include_router(slots.router, prefix="/slots", tags=["slots"])
 api_router.include_router(queue.router, prefix="/queue", tags=["queue"])
 api_router.include_router(
