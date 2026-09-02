@@ -2,7 +2,9 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
+from app.schemas.eta import QueueETAResponse
 from app.schemas.queue import QueueCheckInCreate, QueueEntryResponse
+from app.services import eta as eta_service
 from app.services import queue as queue_service
 
 router = APIRouter()
@@ -78,5 +80,16 @@ async def mark_no_show(
 ) -> QueueEntryResponse:
     try:
         return queue_service.mark_no_show(session, queue_entry_id)
+    except queue_service.QueueError as error:
+        _raise_queue_error(error)
+
+
+@router.get("/{queue_entry_id}/eta", response_model=QueueETAResponse)
+async def get_queue_eta(
+    queue_entry_id: int,
+    session: Session = Depends(get_db),
+) -> QueueETAResponse:
+    try:
+        return eta_service.calculate_eta(session, queue_entry_id)
     except queue_service.QueueError as error:
         _raise_queue_error(error)
