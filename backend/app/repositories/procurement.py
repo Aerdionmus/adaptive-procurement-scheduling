@@ -1,3 +1,5 @@
+from datetime import datetime, timezone
+
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
@@ -26,17 +28,36 @@ def get_centre_for_update(session: Session, centre_id: int) -> ProcurementCentre
     )
 
 
-def list_usable_slots(session: Session, centre_id: int) -> list[ProcurementSlot]:
-    return list(
-        session.scalars(
-            select(ProcurementSlot)
-            .where(
-                ProcurementSlot.centre_id == centre_id,
-                ProcurementSlot.capacity > 0,
-            )
-            .order_by(ProcurementSlot.slot_date, ProcurementSlot.start_time)
+def _slot_end_datetime(slot: ProcurementSlot) -> datetime:
+    """Combine a slot's date and end time into a comparable instant.
+
+    Mirrors the scheduling engine's treatment of slot date/time values as
+    naive wall-clock values interpreted as UTC, so the two stay consistent.
+    """
+    return datetime.combine(slot.slot_date, slot.end_time, tzinfo=timezone.utc)
+
+
+def list_usable_slots(
+    session: Session, centre_id: int, *, now: datetime | None = None
+) -> list[ProcurementSlot]:
+    """Slots at ``centre_id`` with remaining capacity that have not ended.
+
+    A slot remains usable while any part of its window is still ahead of
+    ``now`` (defaults to the current time), so a slot later today stays
+    visible while a slot whose window has already elapsed is excluded.
+    """
+    if now is None:
+        now = datetime.now(timezone.utc)
+
+    candidates = session.scalars(
+        select(ProcurementSlot)
+        .where(
+            ProcurementSlot.centre_id == centre_id,
+            ProcurementSlot.capacity > 0,
         )
+        .order_by(ProcurementSlot.slot_date, ProcurementSlot.start_time)
     )
+    return [slot for slot in candidates if _slot_end_datetime(slot) >= now]
 
 
 def get_slot(session: Session, slot_id: int) -> ProcurementSlot | None:

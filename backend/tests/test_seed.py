@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import date, timedelta
 from pathlib import Path
 
 import pytest
@@ -8,7 +9,7 @@ from alembic.config import Config
 from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import Session, sessionmaker
 
-from app.db.seed import seed_demo_data
+from app.db.seed import DEMO_DAY_OFFSETS, _demo_dates, seed_demo_data
 from app.models import (
     Booking,
     Farmer,
@@ -90,3 +91,49 @@ def test_seeded_foreign_key_relationships_are_valid(db_session: Session) -> None
 
     for notification in db_session.scalars(select(NotificationLog)).all():
         assert notification.booking is not None
+
+
+# --------------------------------------------------------------------------
+# Rolling demo-date behaviour
+# --------------------------------------------------------------------------
+
+
+def test_demo_dates_are_relative_to_today_not_hardcoded() -> None:
+    """`_demo_dates` must derive its dates from the supplied reference date
+    rather than any fixed calendar date, so the seed stays usable forever."""
+    reference = date(2031, 3, 17)  # arbitrary future date, well past 2026-10
+    dates = _demo_dates(reference)
+
+    assert dates == tuple(reference + timedelta(days=offset) for offset in DEMO_DAY_OFFSETS)
+    # None of the generated dates should be in the past relative to the
+    # reference date used to generate them.
+    assert all(d > reference for d in dates)
+
+
+def test_demo_dates_track_an_arbitrary_far_future_today(
+    db_session: Session,
+) -> None:
+    """A seed run long after the old fixed October-2026 dates must still
+    produce slots on current/future dates rather than stale ones."""
+    far_future_today = date(2030, 1, 15)
+
+    seed_demo_data(db_session, today=far_future_today)
+
+    slot_dates = {
+        slot_date
+        for slot_date in db_session.scalars(select(ProcurementSlot.slot_date)).all()
+    }
+
+    assert slot_dates == set(_demo_dates(far_future_today))
+    assert all(slot_date > far_future_today for slot_date in slot_dates)
+
+
+def test_seed_is_idempotent_for_a_fixed_reference_date(db_session: Session) -> None:
+    """Re-seeding on the *same* reference date must not create duplicates,
+    matching the existing idempotency guarantee for a given day."""
+    fixed_today = date(2027, 6, 1)
+
+    first = seed_demo_data(db_session, today=fixed_today)
+    second = seed_demo_data(db_session, today=fixed_today)
+
+    assert first == second == EXPECTED_COUNTS

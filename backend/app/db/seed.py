@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, datetime, time, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
 from typing import Any
 
@@ -45,7 +45,24 @@ DEMO_FARMERS = (
     {"name": "Muthuvel", "phone": "9000000005", "village": "Thiruvaiyaru"},
 )
 
-DEMO_DATES = (date(2026, 10, 1), date(2026, 10, 2), date(2026, 10, 3))
+# The demo dataset used to pin bookings to fixed October 2026 dates. That
+# meant the seeded slots quietly became unbookable "past" data once that
+# week elapsed. Demo dates are now generated relative to whenever the seed
+# actually runs (see `_demo_dates`), so a fresh seed always produces
+# usable near-future slots regardless of the current date.
+#
+# Offsets deliberately start at +1 (tomorrow) rather than +0 (today):
+# app/services/queue.py's early-check-in guard only restricts check-ins for
+# a slot dated exactly "today" (see `_reject_early_check_in`), specifically
+# because it was designed around demo data that never lands on the current
+# date. Keeping demo dates strictly in the future preserves that existing,
+# already-validated behavior instead of requiring changes to the check-in
+# guard.
+DEMO_DAY_OFFSETS = (1, 2, 3)  # tomorrow, +2 days, +3 days
+# Positional indices (0, 1, 2) into the tuple returned by `_demo_dates()`,
+# used by DEMO_BOOKINGS below to reference "the seed's 1st/2nd/3rd demo
+# date" without hardcoding an actual calendar date or day-count offset.
+DEMO_DATE_POSITIONS = (0, 1, 2)
 DEMO_TIME_WINDOWS = (
     (time(9, 0), time(10, 0)),
     (time(10, 30), time(11, 30)),
@@ -56,7 +73,7 @@ DEMO_BOOKINGS = (
     {
         "phone": "9000000001",
         "centre_code": "TNJ-CENTRAL-01",
-        "slot_date": DEMO_DATES[0],
+        "date_offset": DEMO_DATE_POSITIONS[0],
         "start_time": time(9, 0),
         "crop_type": "Paddy",
         "quantity_kg": Decimal("1250.00"),
@@ -65,7 +82,7 @@ DEMO_BOOKINGS = (
     {
         "phone": "9000000002",
         "centre_code": "TNJ-CENTRAL-01",
-        "slot_date": DEMO_DATES[0],
+        "date_offset": DEMO_DATE_POSITIONS[0],
         "start_time": time(10, 30),
         "crop_type": "Groundnut",
         "quantity_kg": Decimal("680.00"),
@@ -74,7 +91,7 @@ DEMO_BOOKINGS = (
     {
         "phone": "9000000003",
         "centre_code": "KUM-01",
-        "slot_date": DEMO_DATES[1],
+        "date_offset": DEMO_DATE_POSITIONS[1],
         "start_time": time(9, 0),
         "crop_type": "Black Gram",
         "quantity_kg": Decimal("420.00"),
@@ -83,7 +100,7 @@ DEMO_BOOKINGS = (
     {
         "phone": "9000000004",
         "centre_code": "KUM-01",
-        "slot_date": DEMO_DATES[1],
+        "date_offset": DEMO_DATE_POSITIONS[1],
         "start_time": time(10, 30),
         "crop_type": "Cotton",
         "quantity_kg": Decimal("940.00"),
@@ -92,13 +109,25 @@ DEMO_BOOKINGS = (
     {
         "phone": "9000000005",
         "centre_code": "TNJ-CENTRAL-01",
-        "slot_date": DEMO_DATES[2],
+        "date_offset": DEMO_DATE_POSITIONS[2],
         "start_time": time(14, 0),
         "crop_type": "Paddy",
         "quantity_kg": Decimal("1100.00"),
         "status": BookingStatus.BOOKED,
     },
 )
+
+
+def _demo_dates(today: date | None = None) -> tuple[date, ...]:
+    """Return the rolling demo dates, anchored to ``today`` (or the real
+    current date when not provided).
+
+    Kept deliberately simple: a small rolling window of near-future dates
+    so the seeded data is always usable on whatever day the seed is run,
+    without adding an external dependency or a new table.
+    """
+    base = today if today is not None else date.today()
+    return tuple(base + timedelta(days=offset) for offset in DEMO_DAY_OFFSETS)
 
 
 def _record_counts(session: Session) -> dict[str, int]:
@@ -117,8 +146,14 @@ def _record_counts(session: Session) -> dict[str, int]:
     }
 
 
-def seed_demo_data(session: Session) -> dict[str, int]:
-    """Create the fixed demo dataset and return the resulting table counts."""
+def seed_demo_data(session: Session, today: date | None = None) -> dict[str, int]:
+    """Create the demo dataset and return the resulting table counts.
+
+    Slot/booking dates are generated relative to ``today`` (or the real
+    current date when not provided) so the seeded data stays usable no
+    matter when the seed is actually run.
+    """
+    demo_dates = _demo_dates(today)
     try:
         centres: dict[str, ProcurementCentre] = {}
         for centre_data in DEMO_CENTRES:
@@ -146,7 +181,7 @@ def seed_demo_data(session: Session) -> dict[str, int]:
 
         slots: dict[tuple[str, date, time], ProcurementSlot] = {}
         for centre_code, centre in centres.items():
-            for slot_date in DEMO_DATES:
+            for slot_date in demo_dates:
                 for start_time, end_time in DEMO_TIME_WINDOWS:
                     slot = session.scalar(
                         select(ProcurementSlot).where(
@@ -174,7 +209,7 @@ def seed_demo_data(session: Session) -> dict[str, int]:
             slot = slots[
                 (
                     booking_data["centre_code"],
-                    booking_data["slot_date"],
+                    demo_dates[booking_data["date_offset"]],
                     booking_data["start_time"],
                 )
             ]
