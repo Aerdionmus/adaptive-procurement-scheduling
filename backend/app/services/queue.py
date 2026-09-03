@@ -1,9 +1,9 @@
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy.orm import Session
 
-from app.models import BookingStatus, QueueEntry, QueueStatus
+from app.models import Booking, BookingStatus, QueueEntry, QueueStatus
 from app.repositories import bookings as booking_repository
 from app.repositories import procurement as procurement_repository
 from app.repositories import queue as queue_repository
@@ -14,6 +14,53 @@ from app.services import throughput as throughput_service
 class QueueError(Exception):
     detail: str
     status_code: int
+
+
+# How early a farmer may check in relative to their booked slot's start
+# time, once the slot's day has arrived. Purely a check-in guard - it does
+# not touch the adaptive scheduling model in app/services/scheduling.py.
+EARLY_CHECK_IN_WINDOW_MINUTES = 30
+
+
+def _slot_start_datetime(slot) -> datetime:
+    """Combine a slot's date and start time into a UTC wall-clock instant.
+
+    Slot times are stored as timezone-naive date/time-of-day values (no
+    per-centre timezone in the schema yet), so - consistent with how the
+    rest of the app treats them - they're interpreted as UTC wall-clock.
+    """
+    return datetime.combine(slot.slot_date, slot.start_time, tzinfo=timezone.utc)
+
+
+def _reject_early_check_in(booking: Booking) -> None:
+    """Block check-in more than EARLY_CHECK_IN_WINDOW_MINUTES before a
+    same-day slot's start time.
+
+    Deliberately scoped to "today's slot": the demo/seed data
+    (app/db/seed.py) uses fixed calendar dates that don't track the real
+    clock, so a distance-based rule (e.g. "must be within N days of the
+    slot") would reject every seeded booking's check-in for as long as
+    those fixed dates remain in the future - which, being hardcoded, is
+    always. Gating on "is it actually the slot's day yet" avoids that,
+    while still stopping the concrete abuse case this guard exists for: a
+    farmer showing up hours early on the day of their appointment and
+    jumping the queue ahead of their assigned time.
+    """
+    slot = booking.slot
+    if slot is None:
+        return
+    now = datetime.now(timezone.utc)
+    if slot.slot_date != now.date():
+        return
+    earliest_check_in = _slot_start_datetime(slot) - timedelta(
+        minutes=EARLY_CHECK_IN_WINDOW_MINUTES
+    )
+    if now < earliest_check_in:
+        raise QueueError(
+            "Check-in isn't open yet. You can check in from "
+            f"{EARLY_CHECK_IN_WINDOW_MINUTES} minutes before your slot starts.",
+            422,
+        )
 
 
 def check_in_booking(session: Session, booking_id: int, centre_id: int) -> QueueEntry:
@@ -33,6 +80,7 @@ def check_in_booking(session: Session, booking_id: int, centre_id: int) -> Queue
             raise QueueError("Booking already has a queue entry", 409)
         if booking.status != BookingStatus.BOOKED:
             raise QueueError("Booking is not eligible for check-in", 409)
+        _reject_early_check_in(booking)
 
         queue_entry = queue_repository.create_queue_entry(
             session,

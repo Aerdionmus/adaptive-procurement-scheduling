@@ -6,6 +6,7 @@ import { SchedulingAlert } from "../components/SchedulingAlert";
 import { StatusTimeline } from "../components/StatusTimeline";
 import { ErrorState, LoadingState } from "../components/StateViews";
 import { checkIn } from "../api/endpoints";
+import { ApiError } from "../api/client";
 import { useBookingContext } from "../hooks/useBookingContext";
 import { useSchedulingStatus } from "../hooks/useSchedulingStatus";
 import { navigate } from "../core/router";
@@ -24,8 +25,15 @@ export function TrackProcurement({ bookingId }) {
     try {
       await checkIn({ bookingId: data.booking.id, centreId: data.booking.centre_id });
       reload();
-    } catch {
-      setCheckInError("We couldn't check you in. Please try again.");
+    } catch (error) {
+      // Surface the backend's own message when it gave us a clear one (e.g.
+      // the early check-in guard), falling back to a generic message for
+      // anything else (network errors, unexpected 5xxs, etc.).
+      setCheckInError(
+        error instanceof ApiError
+          ? error.message
+          : "We couldn't check you in. Please try again.",
+      );
     } finally {
       setCheckingIn(false);
     }

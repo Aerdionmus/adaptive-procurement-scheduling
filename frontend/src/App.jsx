@@ -9,6 +9,7 @@ import { BookSlot } from "./screens/BookSlot";
 import { BookingConfirmation } from "./screens/BookingConfirmation";
 import { TrackProcurement } from "./screens/TrackProcurement";
 import { BookingHistory } from "./screens/BookingHistory";
+import { StaffDashboard } from "./screens/StaffDashboard";
 
 const TITLES = {
   home: "Adaptive Procurement Scheduling",
@@ -16,6 +17,7 @@ const TITLES = {
   confirmation: "Booking confirmed",
   track: "Track procurement",
   history: "Booking history",
+  staff: "Centre dashboard",
 };
 
 function App() {
@@ -29,12 +31,23 @@ function App() {
     document.title = `${resolveTitle(route.segments)} \u2013 Adaptive Procurement`;
   }, [route.segments]);
 
+  const { segments, params } = route;
+  const [primary, secondary, tertiary] = segments;
+
+  // The staff/admin workspace is a separate audience from the farmer app
+  // and doesn't require a farmer onboarding session, so it's handled
+  // before the farmer gate below rather than folded into it.
+  if (primary === "staff") {
+    return (
+      <AppShell segments={segments} title={TITLES.staff}>
+        <StaffDashboard params={params} />
+      </AppShell>
+    );
+  }
+
   if (!farmer) {
     return <Onboarding onDone={setFarmer} />;
   }
-
-  const { segments, params } = route;
-  const [primary, secondary, tertiary] = segments;
 
   let screen;
   let title;
@@ -79,6 +92,7 @@ function resolveTitle(segments) {
   if (segments[0] === "booking") return TITLES.confirmation;
   if (segments[0] === "track") return TITLES.track;
   if (segments[0] === "history") return TITLES.history;
+  if (segments[0] === "staff") return TITLES.staff;
   return TITLES.home;
 }
 

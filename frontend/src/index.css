@@ -213,6 +213,13 @@ button {
   color: var(--color-primary);
 }
 
+/* Staff entry point is tablet-only in the bottom nav: hidden on phone
+   (below), and hidden again at >=1024px by the existing rule that hides
+   .app-shell__nav entirely once the sidebar takes over. */
+.app-shell__nav-item--staff {
+  display: none;
+}
+
 .icon-button {
   background: none;
   border: none;
@@ -258,6 +265,10 @@ button {
 
   .app-shell__nav-item {
     flex: 0 0 120px;
+  }
+
+  .app-shell__nav-item--staff {
+    display: flex;
   }
 }
 
@@ -1406,4 +1417,243 @@ button {
   border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
   min-height: 44px;
+}
+
+/* ==========================================================================
+   Staff dashboard
+   --------------------------------------------------------------------------
+   Desktop-oriented centre staff console (#/staff). Reuses the same design
+   tokens, badge/button/state-view classes as the farmer app - this section
+   only adds the layout and panel chrome specific to the staff screens.
+   ========================================================================== */
+.screen--staff {
+  gap: 24px;
+}
+
+.staff-dashboard {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.staff-dashboard__col {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+@media (min-width: 1024px) {
+  .staff-dashboard {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    align-items: start;
+    gap: 24px;
+  }
+}
+
+.staff-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 18px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-card);
+}
+
+.staff-panel__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.staff-panel__head-icon {
+  width: 22px;
+  height: 22px;
+  color: var(--color-primary);
+  flex-shrink: 0;
+}
+
+.staff-panel__subtitle {
+  font-size: 0.85rem;
+  color: var(--color-text-soft);
+  margin-top: 2px;
+}
+
+/* ---- Centre health stat grid -------------------------------------------- */
+.staff-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 14px;
+  margin: 0;
+}
+
+.staff-stat dt {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--color-text-soft);
+}
+
+.staff-stat dd {
+  margin: 2px 0 0;
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: var(--color-ink);
+}
+
+.staff-stat__note {
+  margin-top: 2px;
+  font-size: 0.76rem;
+  color: var(--color-text-soft);
+}
+
+/* ---- Currently serving --------------------------------------------------- */
+.staff-serving {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+.staff-serving__actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+/* ---- Live queue table ----------------------------------------------------- */
+.staff-table-wrap {
+  overflow-x: auto;
+}
+
+.staff-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.88rem;
+}
+
+.staff-table th {
+  text-align: left;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--color-text-soft);
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--color-border);
+  white-space: nowrap;
+}
+
+.staff-table td {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--color-border);
+  color: var(--color-text);
+  white-space: nowrap;
+}
+
+.staff-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+/* ---- Scheduling status summary --------------------------------------------- */
+.staff-status-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.staff-status-summary__item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 4px;
+}
+
+.staff-status-summary__count {
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: var(--color-ink);
+}
+
+/* ---- Affected bookings ----------------------------------------------------- */
+.staff-affected-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.staff-affected-item {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+}
+
+.staff-affected-item__head {
+  all: unset;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+}
+
+.staff-affected-item__booking {
+  flex: 1;
+  font-weight: 600;
+  color: var(--color-ink);
+  font-size: 0.92rem;
+}
+
+.staff-affected-item__chevron {
+  width: 16px;
+  height: 16px;
+  color: var(--color-text-soft);
+  flex-shrink: 0;
+  transition: transform 0.15s ease;
+}
+
+.staff-affected-item__chevron--open {
+  transform: rotate(90deg);
+}
+
+.staff-affected-item__recommendation {
+  margin-top: 8px;
+  font-size: 0.85rem;
+  color: var(--color-text-soft);
+}
+
+.staff-affected-item__details {
+  margin: 10px 0 0;
+  padding-top: 10px;
+  border-top: 1px solid var(--color-border);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.staff-affected-item__details dt {
+  font-size: 0.74rem;
+  font-weight: 600;
+  color: var(--color-text-soft);
+}
+
+.staff-affected-item__details dd {
+  margin: 1px 0 0;
+  font-size: 0.88rem;
+  color: var(--color-text);
+}
+
+.staff-affected-item__explanation dd {
+  font-size: 0.8rem;
+  line-height: 1.5;
+}
+
+@media (min-width: 1024px) {
+  .staff-stat-grid {
+    grid-template-columns: repeat(4, 1fr);
+  }
 }

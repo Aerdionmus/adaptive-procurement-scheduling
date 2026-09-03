@@ -16,3 +16,13 @@ export const SCHEDULE_STATE_TONE = {
   AT_RISK: "warning",
   DELAYED: "danger",
 };
+
+// Used by the staff dashboard's live queue table and currently-serving
+// panel (the farmer app never renders a raw QueueStatus badge).
+export const QUEUE_STATUS_TONE = {
+  WAITING: "neutral",
+  CALLED: "warning",
+  SERVING: "good",
+  DONE: "good",
+  NO_SHOW: "danger",
+};

@@ -1,4 +1,4 @@
-import { formatClockTime, formatTimeRange } from "../core/format";
+import { formatClockTime, formatDate, formatTimeRange } from "../core/format";
 import { SCHEDULE_STATE_HEADLINES, SCHEDULE_STATE_LABELS } from "../core/statusLabels";
 import { StatusBadge } from "./StatusBadge";
 import { SCHEDULE_STATE_TONE } from "./statusTone";
@@ -75,7 +75,7 @@ function RecommendationPanel({ recommendation, onReview }) {
       <div className="scheduling-alert__recommendation">
         <p className="scheduling-alert__recommendation-eyebrow">Recommended</p>
         <p className="scheduling-alert__recommendation-slot">
-          {formatTimeRange(slot.start_time, slot.end_time)}
+          {formatDate(slot.slot_date)}, {formatTimeRange(slot.start_time, slot.end_time)}
         </p>
         <button
           type="button"
@@ -98,7 +98,7 @@ function RecommendationPanel({ recommendation, onReview }) {
         <p className="scheduling-alert__recommendation-eyebrow">Alternative centre</p>
         <p className="scheduling-alert__recommendation-slot">{centre.name}</p>
         <p className="scheduling-alert__recommendation-slot scheduling-alert__recommendation-slot--muted">
-          {formatTimeRange(slot.start_time, slot.end_time)}
+          {formatDate(slot.slot_date)}, {formatTimeRange(slot.start_time, slot.end_time)}
         </p>
         <button
           type="button"

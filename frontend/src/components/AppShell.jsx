@@ -55,16 +55,24 @@ export function AppShell({ segments, title, onBack, children }) {
             })}
           </nav>
 
-          {/* Placeholder workspace for future Staff/Admin dashboards. Not a
-              real route yet - deliberately non-interactive so it doesn't
-              imply functionality that doesn't exist. */}
-          <div className="app-shell__sidebar-future" aria-hidden="true">
+          {/* Staff/Admin workspace, separate from the farmer nav above.
+              This is the desktop entry point; on tablet the equivalent
+              link lives in the bottom nav instead (see
+              .app-shell__nav-item--staff below) since the sidebar itself
+              is desktop-only. */}
+          <div className="app-shell__sidebar-future">
             <p className="app-shell__sidebar-heading">Staff &amp; admin</p>
-            <div className="app-shell__sidebar-future-link">
+            <button
+              type="button"
+              className={`app-shell__sidebar-link ${
+                segments[0] === "staff" ? "app-shell__sidebar-link--active" : ""
+              }`}
+              onClick={() => navigate("/staff")}
+              aria-current={segments[0] === "staff" ? "page" : undefined}
+            >
               <IconLayoutGrid aria-hidden="true" />
               <span>Centre dashboard</span>
-              <span className="app-shell__sidebar-future-tag">Coming soon</span>
-            </div>
+            </button>
           </div>
         </aside>
 
@@ -106,6 +114,22 @@ export function AppShell({ segments, title, onBack, children }) {
             </button>
           );
         })}
+
+        {/* Staff/Admin entry point for tablet: shown only at tablet width
+            (hidden on phone via CSS - the staff console isn't meant to fit
+            there; hidden again at >=1024px, where this whole nav bar is
+            replaced by the sidebar's own "Centre dashboard" link). */}
+        <button
+          type="button"
+          className={`app-shell__nav-item app-shell__nav-item--staff ${
+            segments[0] === "staff" ? "app-shell__nav-item--active" : ""
+          }`}
+          onClick={() => navigate("/staff")}
+          aria-current={segments[0] === "staff" ? "page" : undefined}
+        >
+          <IconLayoutGrid aria-hidden="true" />
+          <span>Staff</span>
+        </button>
       </nav>
     </div>
   );

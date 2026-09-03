@@ -10,6 +10,7 @@ import { combineDateAndTime } from "../core/format";
 import { addTrackedBookingId, getTrackedBookingIds } from "../core/storage";
 import { navigate } from "../core/router";
 import { SCHEDULE_STATE_LABELS } from "../core/statusLabels";
+import { LIVE_REFRESH_INTERVAL_MS } from "../config";
 
 const ACTIVE_STATUSES = new Set(["BOOKED", "CHECKED_IN", "IN_QUEUE", "PROCESSING"]);
 
@@ -21,6 +22,22 @@ export function FarmerHome({ farmer }) {
   useEffect(() => {
     loadNextBooking(setState);
   }, []);
+
+  // Lightweight polling so a booking that changes state elsewhere (checked
+  // in from Track, moved through the queue, etc.) is reflected here without
+  // a manual reload. Only worth polling once there's an active booking to
+  // watch; same plain setInterval approach as useBookingContext, no new
+  // dependency and no change to the existing loadNextBooking call.
+  useEffect(() => {
+    if (state.status !== "ready") return undefined;
+
+    const intervalId = setInterval(() => {
+      if (document.visibilityState === "hidden") return;
+      refreshNextBooking(setState, { silent: true });
+    }, LIVE_REFRESH_INTERVAL_MS);
+
+    return () => clearInterval(intervalId);
+  }, [state.status]);
 
   const { status: scheduleStatus } = useSchedulingStatus(
     state.status === "ready" ? state.context : null,
@@ -135,6 +152,15 @@ export function FarmerHome({ farmer }) {
 
 async function loadNextBooking(setState) {
   setState({ status: "loading", context: null });
+  await refreshNextBooking(setState);
+}
+
+// Same fetch as loadNextBooking, but never resets to "loading" first, and -
+// when called silently for background polling - never drops a
+// currently-displayed booking to a hard error screen over a single failed
+// refresh. Used so periodic polling doesn't flash the loading skeleton or
+// bounce the farmer to an error state over a transient blip.
+async function refreshNextBooking(setState, { silent = false } = {}) {
   const ids = getTrackedBookingIds();
 
   if (ids.length === 0) {
@@ -159,7 +185,7 @@ async function loadNextBooking(setState) {
 
     setState({ status: "empty", context: null });
   } catch {
-    setState({ status: "error", context: null });
+    if (!silent) setState({ status: "error", context: null });
   }
 }
 

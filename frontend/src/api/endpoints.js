@@ -64,3 +64,32 @@ export function getBookingSchedule(bookingId) {
 export function getCentreSchedule(centreId) {
   return getJson(`/api/scheduling/centres/${centreId}`);
 }
+
+// ---- Staff: queue actions ------------------------------------------------
+// Centre staff console operations. Farmer screens never call these.
+
+export function callNextFarmer(centreId) {
+  return postJson(`/api/queue/centres/${centreId}/call-next`, {});
+}
+
+export function startServing(queueEntryId) {
+  return postJson(`/api/queue/${queueEntryId}/start-serving`, {});
+}
+
+export function completeService(queueEntryId) {
+  return postJson(`/api/queue/${queueEntryId}/complete`, {});
+}
+
+export function markNoShow(queueEntryId) {
+  return postJson(`/api/queue/${queueEntryId}/no-show`, {});
+}
+
+// ---- Staff: throughput ----------------------------------------------------
+
+export function getLatestThroughput(centreId) {
+  return getJson(`/api/admin/throughput/${centreId}`);
+}
+
+export function recalculateThroughput(centreId) {
+  return postJson(`/api/admin/throughput/${centreId}/recalculate`, {});
+}
