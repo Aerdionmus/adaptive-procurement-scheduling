@@ -99,11 +99,10 @@ async def test_create_farmer(client: AsyncClient) -> None:
 
 
 @pytest.mark.anyio
-async def test_list_farmers(client: AsyncClient) -> None:
+async def test_list_farmers_endpoint_is_disabled(client: AsyncClient) -> None:
     response = await client.get("/api/farmers/")
 
-    assert response.status_code == 200
-    assert len(response.json()) == 5
+    assert response.status_code == 405
 
 
 @pytest.mark.anyio

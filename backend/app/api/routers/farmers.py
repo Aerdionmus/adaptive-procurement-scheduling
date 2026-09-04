@@ -14,8 +14,3 @@ async def create_farmer(
     session: Session = Depends(get_db),
 ) -> FarmerResponse:
     return farmer_repository.create_farmer(session, farmer_data)
-
-
-@router.get("/", response_model=list[FarmerResponse])
-async def list_farmers(session: Session = Depends(get_db)) -> list[FarmerResponse]:
-    return farmer_repository.list_farmers(session)

@@ -1,4 +1,3 @@
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models import Farmer
@@ -12,9 +11,6 @@ def create_farmer(session: Session, farmer_data: FarmerCreate) -> Farmer:
     session.refresh(farmer)
     return farmer
 
-
-def list_farmers(session: Session) -> list[Farmer]:
-    return list(session.scalars(select(Farmer).order_by(Farmer.id)))
 
 
 def get_farmer(session: Session, farmer_id: int) -> Farmer | None:
