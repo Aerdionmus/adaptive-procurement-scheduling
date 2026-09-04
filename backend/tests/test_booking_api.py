@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, time
 from pathlib import Path
 
 import pytest
@@ -237,6 +238,43 @@ async def test_create_booking_rejects_centre_slot_mismatch(
 
     assert response.status_code == 422
     assert response.json()["detail"] == "Procurement slot does not belong to the selected centre"
+
+
+@pytest.mark.anyio
+async def test_create_booking_rejects_expired_slot(
+    client: AsyncClient,
+    db_session: Session,
+) -> None:
+    payload = booking_payload(db_session)
+    slot = db_session.get(ProcurementSlot, payload["slot_id"])
+    assert slot is not None
+
+    original_capacity = slot.capacity
+    booking_count_before = len(
+        db_session.scalars(
+            select(Booking).where(Booking.slot_id == slot.id)
+        ).all()
+    )
+
+    slot.slot_date = datetime(2020, 1, 1).date()
+    slot.start_time = time(9, 0)
+    slot.end_time = time(10, 0)
+    db_session.commit()
+
+    response = await client.post("/api/bookings/", json=payload)
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "Procurement slot has expired"
+
+    db_session.refresh(slot)
+    assert slot.capacity == original_capacity
+
+    booking_count_after = len(
+        db_session.scalars(
+            select(Booking).where(Booking.slot_id == slot.id)
+        ).all()
+    )
+    assert booking_count_after == booking_count_before
 
 
 @pytest.mark.anyio

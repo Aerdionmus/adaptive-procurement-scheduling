@@ -37,6 +37,15 @@ def _slot_end_datetime(slot: ProcurementSlot) -> datetime:
     return datetime.combine(slot.slot_date, slot.end_time, tzinfo=timezone.utc)
 
 
+def is_slot_expired(
+    slot: ProcurementSlot, *, now: datetime | None = None
+) -> bool:
+    """Return whether a procurement slot's booking window has ended."""
+    if now is None:
+        now = datetime.now(timezone.utc)
+    return _slot_end_datetime(slot) < now
+
+
 def list_usable_slots(
     session: Session, centre_id: int, *, now: datetime | None = None
 ) -> list[ProcurementSlot]:
@@ -57,7 +66,7 @@ def list_usable_slots(
         )
         .order_by(ProcurementSlot.slot_date, ProcurementSlot.start_time)
     )
-    return [slot for slot in candidates if _slot_end_datetime(slot) >= now]
+    return [slot for slot in candidates if not is_slot_expired(slot, now=now)]
 
 
 def get_slot(session: Session, slot_id: int) -> ProcurementSlot | None:
