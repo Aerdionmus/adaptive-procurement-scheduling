@@ -11,31 +11,27 @@
 // GET /api/bookings/{id}/queue-entry pair would simplify. Flagged in the
 // final report rather than changed here, since backend changes are out of
 // scope for this workstream.
-import { getBooking, getLiveQueue, getQueueEta, listCentres, listCentreSlots } from "../api/endpoints";
+import { getBooking, getLiveQueue, getQueueEta, getSlot, listCentres } from "../api/endpoints";
 
 const LIVE_QUEUE_BOOKING_STATUSES = new Set(["CHECKED_IN", "IN_QUEUE", "PROCESSING"]);
 
 /**
  * @param {number} bookingId
- * @param {object} [options]
- * @param {object} [options.slotHint] - a slot object already known on the
- *   client (e.g. the one the farmer just picked in the booking flow), used
- *   instead of a fresh lookup. Needed because a slot that has since filled
- *   up (capacity reaches 0) is excluded from the "usable slots" endpoint.
  */
-export async function loadBookingContext(bookingId, { slotHint } = {}) {
+export async function loadBookingContext(bookingId) {
   const booking = await getBooking(bookingId);
   const centres = await listCentres();
   const centre = centres.find((c) => c.id === booking.centre_id) ?? null;
 
-  let slot = slotHint && slotHint.id === booking.slot_id ? slotHint : null;
-  if (!slot && centre) {
-    try {
-      const slots = await listCentreSlots(centre.id);
-      slot = slots.find((s) => s.id === booking.slot_id) ?? null;
-    } catch {
-      slot = null;
-    }
+  // Fetch the booking's slot directly by id via GET /api/slots/{slot_id},
+  // which (unlike the centre's "usable slots" listing) returns the slot
+  // regardless of remaining capacity. This keeps a booking's date/time and
+  // adaptive status visible even after the slot fills up to capacity 0.
+  let slot = null;
+  try {
+    slot = await getSlot(booking.slot_id);
+  } catch {
+    slot = null;
   }
 
   let queueEntry = null;

@@ -23,6 +23,14 @@ export function listCentreSlots(centreId) {
   return getJson(`/api/centres/${centreId}/slots`);
 }
 
+// Direct lookup by slot id. Unlike listCentreSlots() (which intentionally
+// excludes full/expired slots for NEW booking discovery), this returns the
+// slot regardless of remaining capacity, so an *existing* booking can still
+// retrieve its slot's date/time after the slot fills up.
+export function getSlot(slotId) {
+  return getJson(`/api/slots/${slotId}`);
+}
+
 // ---- Bookings ----------------------------------------------------------
 
 export function createBooking({ farmerId, centreId, slotId, cropType, quantityKg }) {

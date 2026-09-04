@@ -10,7 +10,7 @@ const INITIAL_STATE = { bookingId: null, status: "loading", data: null, error: n
 // left to refresh.
 const POLLABLE_STATUSES = new Set(["BOOKED", "CHECKED_IN", "IN_QUEUE", "PROCESSING"]);
 
-export function useBookingContext(bookingId, slotHint) {
+export function useBookingContext(bookingId) {
   const [state, setState] = useState(INITIAL_STATE);
 
   // silent: used by background polling so a single failed refresh doesn't
@@ -20,16 +20,13 @@ export function useBookingContext(bookingId, slotHint) {
   const load = useCallback(
     ({ silent = false } = {}) => {
       if (!bookingId) return;
-      loadBookingContext(bookingId, { slotHint })
+      loadBookingContext(bookingId)
         .then((data) => setState({ bookingId, status: "ready", data, error: null }))
         .catch((error) => {
           if (silent) return;
           setState({ bookingId, status: "error", data: null, error });
         });
     },
-    // slotHint is intentionally excluded: it is only relevant on the first
-    // load right after a booking is created, not on later reloads.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     [bookingId],
   );
 
