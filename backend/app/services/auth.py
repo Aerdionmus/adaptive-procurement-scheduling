@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from app.core.security import hash_password, verify_password
 from app.models import Farmer, ProcurementCentre, User, UserRole
 from app.repositories import users as user_repository
-from app.schemas.auth import UserRegister
+from app.schemas.auth import AdminUserCreate, UserRegister
 
 
 @dataclass
@@ -16,41 +16,102 @@ class AuthError(Exception):
     status_code: int
 
 
-def register_user(session: Session, data: UserRegister) -> User:
-    if user_repository.get_user_by_email(session, data.email) is not None:
-        raise AuthError("An account with this email already exists", 409)
+def _resolve_role_resource(
+    session: Session, *, role: UserRole, farmer_id: int | None, centre_id: int | None
+) -> tuple[int | None, int | None]:
+    """Validate the role/resource pairing and confirm the referenced
+    farmer/centre exists. Returns the (farmer_id, centre_id) to store.
 
-    if data.role == UserRole.FARMER:
-        if data.farmer_id is None:
+    Shared by both public self-registration and admin provisioning so the
+    invariant - FARMER needs exactly a farmer_id, CENTRE_STAFF needs
+    exactly a centre_id, ADMIN needs neither - is enforced identically and
+    in exactly one place, regardless of which endpoint created the user.
+    """
+    if role == UserRole.FARMER:
+        if farmer_id is None:
             raise AuthError("farmer_id is required when registering as FARMER", 422)
-        if data.centre_id is not None:
+        if centre_id is not None:
             raise AuthError("centre_id is not valid when registering as FARMER", 422)
-        farmer = session.get(Farmer, data.farmer_id)
+        farmer = session.get(Farmer, farmer_id)
         if farmer is None:
             raise AuthError("Farmer not found", 404)
-        if user_repository.get_user_by_farmer_id(session, data.farmer_id) is not None:
+        if user_repository.get_user_by_farmer_id(session, farmer_id) is not None:
             raise AuthError("This farmer already has an account", 409)
-        centre_id = None
-        farmer_id = data.farmer_id
-    else:  # UserRole.CENTRE_STAFF (ADMIN is rejected by the schema itself)
-        if data.centre_id is None:
+        return farmer_id, None
+
+    if role == UserRole.CENTRE_STAFF:
+        if centre_id is None:
             raise AuthError("centre_id is required when registering as CENTRE_STAFF", 422)
-        if data.farmer_id is not None:
+        if farmer_id is not None:
             raise AuthError("farmer_id is not valid when registering as CENTRE_STAFF", 422)
-        centre = session.get(ProcurementCentre, data.centre_id)
+        centre = session.get(ProcurementCentre, centre_id)
         if centre is None:
             raise AuthError("Procurement centre not found", 404)
-        centre_id = data.centre_id
-        farmer_id = None
+        return None, centre_id
+
+    # UserRole.ADMIN
+    if farmer_id is not None:
+        raise AuthError("farmer_id is not valid when provisioning ADMIN", 422)
+    if centre_id is not None:
+        raise AuthError("centre_id is not valid when provisioning ADMIN", 422)
+    return None, None
+
+
+def _create_user(
+    session: Session,
+    *,
+    email: str,
+    password: str,
+    role: UserRole,
+    farmer_id: int | None,
+    centre_id: int | None,
+) -> User:
+    if user_repository.get_user_by_email(session, email) is not None:
+        raise AuthError("An account with this email already exists", 409)
+
+    resolved_farmer_id, resolved_centre_id = _resolve_role_resource(
+        session, role=role, farmer_id=farmer_id, centre_id=centre_id
+    )
 
     user = User(
-        email=data.email,
-        hashed_password=hash_password(data.password),
-        role=data.role,
-        farmer_id=farmer_id,
-        centre_id=centre_id,
+        email=email,
+        hashed_password=hash_password(password),
+        role=role,
+        farmer_id=resolved_farmer_id,
+        centre_id=resolved_centre_id,
     )
     return user_repository.create_user(session, user)
+
+
+def register_user(session: Session, data: UserRegister) -> User:
+    """Public, unauthenticated self-registration. The schema itself
+    restricts `data.role` to `SELF_REGISTERABLE_ROLES` (FARMER only); this
+    function does not re-check that, so it must never be called with
+    unvalidated input from another source.
+    """
+    return _create_user(
+        session,
+        email=data.email,
+        password=data.password,
+        role=data.role,
+        farmer_id=data.farmer_id,
+        centre_id=data.centre_id,
+    )
+
+
+def provision_user(session: Session, data: AdminUserCreate) -> User:
+    """ADMIN-only account provisioning. Callers must independently ensure
+    the caller is an authenticated ADMIN (enforced by `require_admin` at
+    the router level) before calling this - it does not check that itself.
+    """
+    return _create_user(
+        session,
+        email=data.email,
+        password=data.password,
+        role=data.role,
+        farmer_id=data.farmer_id,
+        centre_id=data.centre_id,
+    )
 
 
 def authenticate_user(session: Session, email: str, password: str) -> User:

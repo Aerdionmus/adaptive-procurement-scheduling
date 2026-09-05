@@ -29,7 +29,13 @@ from app.db.seed import seed_demo_data
 from app.db.session import get_db
 from app.main import app
 from app.models import Booking, Farmer, ProcurementCentre
-from tests._auth_helpers import auth_headers, create_admin, create_farmer_user, create_staff_user
+from tests._auth_helpers import (
+    auth_headers,
+    create_admin,
+    create_farmer_user,
+    create_staff_user,
+    create_user,
+)
 
 
 @pytest.fixture
@@ -533,7 +539,13 @@ async def test_farmer_can_register_and_log_in(
 
 
 @pytest.mark.anyio
-async def test_centre_staff_can_register(raw_client: AsyncClient, db_session: Session) -> None:
+async def test_centre_staff_cannot_self_register(
+    raw_client: AsyncClient, db_session: Session
+) -> None:
+    """CENTRE_STAFF is a privileged, centre-scoped role and must never be
+    creatable through the public, unauthenticated registration endpoint -
+    it must be provisioned by an ADMIN via POST /api/admin/users instead.
+    """
     c = centre(db_session, "KUM-01")
     response = await raw_client.post(
         "/api/auth/register",
@@ -544,8 +556,7 @@ async def test_centre_staff_can_register(raw_client: AsyncClient, db_session: Se
             "centre_id": c.id,
         },
     )
-    assert response.status_code == 201, response.text
-    assert response.json()["centre_id"] == c.id
+    assert response.status_code == 422, response.text
 
 
 @pytest.mark.anyio
@@ -622,7 +633,16 @@ async def test_register_farmer_without_farmer_id_is_rejected(raw_client: AsyncCl
 
 
 @pytest.mark.anyio
-async def test_register_staff_requires_existing_centre_id(raw_client: AsyncClient) -> None:
+async def test_register_rejects_centre_staff_regardless_of_centre_id_validity(
+    raw_client: AsyncClient,
+) -> None:
+    """CENTRE_STAFF is rejected by the public registration endpoint's role
+    validator before a centre_id is ever looked up - so even a
+    *nonexistent* centre_id doesn't change the outcome. (The
+    centre-existence check itself is covered for the legitimate,
+    ADMIN-only provisioning path by
+    test_admin_provisioning_rejects_invalid_centre_id.)
+    """
     response = await raw_client.post(
         "/api/auth/register",
         json={
@@ -632,7 +652,290 @@ async def test_register_staff_requires_existing_centre_id(raw_client: AsyncClien
             "centre_id": 999999,
         },
     )
+    assert response.status_code == 422
+
+
+@pytest.mark.anyio
+async def test_admin_role_cannot_be_self_provisioned_by_non_admin(
+    raw_client: AsyncClient, db_session: Session
+) -> None:
+    """Belt-and-suspenders: even if a caller tries the admin provisioning
+    path itself, an unauthenticated or non-admin caller must be rejected
+    before role validation is even relevant.
+    """
+    c = centre(db_session, "KUM-01")
+    response = await raw_client.post(
+        "/api/admin/users",
+        json={
+            "email": "sneaky-staff@example.test",
+            "password": "StrongPass123!",
+            "role": "CENTRE_STAFF",
+            "centre_id": c.id,
+        },
+    )
+    assert response.status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# ADMIN-ONLY ACCOUNT PROVISIONING (POST /api/admin/users)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_farmer_cannot_provision_centre_staff(
+    raw_client: AsyncClient, db_session: Session
+) -> None:
+    f = farmer(db_session, "9000000001")
+    c = centre(db_session, "KUM-01")
+    user = create_farmer_user(db_session, f)
+    response = await raw_client.post(
+        "/api/admin/users",
+        json={
+            "email": "escalation-attempt@example.test",
+            "password": "StrongPass123!",
+            "role": "CENTRE_STAFF",
+            "centre_id": c.id,
+        },
+        headers=auth_headers(user),
+    )
+    assert response.status_code == 403
+
+
+@pytest.mark.anyio
+async def test_centre_staff_cannot_provision_centre_staff(
+    raw_client: AsyncClient, db_session: Session
+) -> None:
+    c = centre(db_session, "TNJ-CENTRAL-01")
+    other_centre = centre(db_session, "KUM-01")
+    staff = create_staff_user(db_session, c)
+    response = await raw_client.post(
+        "/api/admin/users",
+        json={
+            "email": "peer-staff@example.test",
+            "password": "StrongPass123!",
+            "role": "CENTRE_STAFF",
+            "centre_id": other_centre.id,
+        },
+        headers=auth_headers(staff),
+    )
+    assert response.status_code == 403
+
+
+@pytest.mark.anyio
+async def test_centre_staff_cannot_provision_admin(
+    raw_client: AsyncClient, db_session: Session
+) -> None:
+    c = centre(db_session, "TNJ-CENTRAL-01")
+    staff = create_staff_user(db_session, c)
+    response = await raw_client.post(
+        "/api/admin/users",
+        json={
+            "email": "staff-wants-admin@example.test",
+            "password": "StrongPass123!",
+            "role": "ADMIN",
+        },
+        headers=auth_headers(staff),
+    )
+    assert response.status_code == 403
+
+
+@pytest.mark.anyio
+async def test_admin_can_provision_centre_staff(
+    raw_client: AsyncClient, db_session: Session
+) -> None:
+    admin = create_admin(db_session)
+    c = centre(db_session, "KUM-01")
+    response = await raw_client.post(
+        "/api/admin/users",
+        json={
+            "email": "new-staff@example.test",
+            "password": "StrongPass123!",
+            "role": "CENTRE_STAFF",
+            "centre_id": c.id,
+        },
+        headers=auth_headers(admin),
+    )
+    assert response.status_code == 201, response.text
+    body = response.json()
+    assert body["role"] == "CENTRE_STAFF"
+    assert body["centre_id"] == c.id
+    assert body["farmer_id"] is None
+
+
+@pytest.mark.anyio
+async def test_admin_can_provision_admin(raw_client: AsyncClient, db_session: Session) -> None:
+    admin = create_admin(db_session)
+    response = await raw_client.post(
+        "/api/admin/users",
+        json={
+            "email": "second-admin@example.test",
+            "password": "StrongPass123!",
+            "role": "ADMIN",
+        },
+        headers=auth_headers(admin),
+    )
+    assert response.status_code == 201, response.text
+    body = response.json()
+    assert body["role"] == "ADMIN"
+    assert body["farmer_id"] is None
+    assert body["centre_id"] is None
+
+
+@pytest.mark.anyio
+async def test_admin_provisioning_rejects_duplicate_email(
+    raw_client: AsyncClient, db_session: Session
+) -> None:
+    admin = create_admin(db_session)
+    c = centre(db_session, "KUM-01")
+    payload = {
+        "email": admin.email,  # already exists
+        "password": "StrongPass123!",
+        "role": "CENTRE_STAFF",
+        "centre_id": c.id,
+    }
+    response = await raw_client.post(
+        "/api/admin/users", json=payload, headers=auth_headers(admin)
+    )
+    assert response.status_code == 409
+
+
+@pytest.mark.anyio
+async def test_admin_provisioning_rejects_invalid_centre_id(
+    raw_client: AsyncClient, db_session: Session
+) -> None:
+    admin = create_admin(db_session)
+    response = await raw_client.post(
+        "/api/admin/users",
+        json={
+            "email": "ghost-centre-staff@example.test",
+            "password": "StrongPass123!",
+            "role": "CENTRE_STAFF",
+            "centre_id": 999999,
+        },
+        headers=auth_headers(admin),
+    )
     assert response.status_code == 404
+
+
+@pytest.mark.anyio
+async def test_admin_provisioning_rejects_invalid_farmer_id(
+    raw_client: AsyncClient, db_session: Session
+) -> None:
+    admin = create_admin(db_session)
+    response = await raw_client.post(
+        "/api/admin/users",
+        json={
+            "email": "ghost-farmer-account@example.test",
+            "password": "StrongPass123!",
+            "role": "FARMER",
+            "farmer_id": 999999,
+        },
+        headers=auth_headers(admin),
+    )
+    assert response.status_code == 404
+
+
+@pytest.mark.anyio
+async def test_admin_provisioned_farmer_cannot_be_assigned_a_centre(
+    raw_client: AsyncClient, db_session: Session
+) -> None:
+    admin = create_admin(db_session)
+    f = farmer(db_session, "9000000003")
+    c = centre(db_session, "KUM-01")
+    response = await raw_client.post(
+        "/api/admin/users",
+        json={
+            "email": "farmer-with-centre@example.test",
+            "password": "StrongPass123!",
+            "role": "FARMER",
+            "farmer_id": f.id,
+            "centre_id": c.id,
+        },
+        headers=auth_headers(admin),
+    )
+    assert response.status_code == 422
+
+
+@pytest.mark.anyio
+async def test_admin_provisioned_centre_staff_cannot_be_assigned_a_farmer(
+    raw_client: AsyncClient, db_session: Session
+) -> None:
+    admin = create_admin(db_session)
+    f = farmer(db_session, "9000000003")
+    c = centre(db_session, "KUM-01")
+    response = await raw_client.post(
+        "/api/admin/users",
+        json={
+            "email": "staff-with-farmer@example.test",
+            "password": "StrongPass123!",
+            "role": "CENTRE_STAFF",
+            "farmer_id": f.id,
+            "centre_id": c.id,
+        },
+        headers=auth_headers(admin),
+    )
+    assert response.status_code == 422
+
+
+@pytest.mark.anyio
+async def test_admin_provisioned_admin_cannot_be_assigned_a_farmer_or_centre(
+    raw_client: AsyncClient, db_session: Session
+) -> None:
+    admin = create_admin(db_session)
+    f = farmer(db_session, "9000000003")
+    response = await raw_client.post(
+        "/api/admin/users",
+        json={
+            "email": "admin-with-farmer@example.test",
+            "password": "StrongPass123!",
+            "role": "ADMIN",
+            "farmer_id": f.id,
+        },
+        headers=auth_headers(admin),
+    )
+    assert response.status_code == 422
+
+
+@pytest.mark.anyio
+async def test_admin_provisioned_centre_staff_can_log_in_and_is_scoped(
+    raw_client: AsyncClient, db_session: Session
+) -> None:
+    """End-to-end: an ADMIN-provisioned CENTRE_STAFF account can log in
+    with the password it was created with, and is scoped only to its own
+    centre's live queue - not another centre's.
+    """
+    admin = create_admin(db_session)
+    home = centre(db_session, "KUM-01")
+    other = centre(db_session, "TNJ-CENTRAL-01")
+    create_response = await raw_client.post(
+        "/api/admin/users",
+        json={
+            "email": "provisioned-staff@example.test",
+            "password": "StrongPass123!",
+            "role": "CENTRE_STAFF",
+            "centre_id": home.id,
+        },
+        headers=auth_headers(admin),
+    )
+    assert create_response.status_code == 201, create_response.text
+
+    login_response = await raw_client.post(
+        "/api/auth/login",
+        data={"username": "provisioned-staff@example.test", "password": "StrongPass123!"},
+    )
+    assert login_response.status_code == 200, login_response.text
+    token = login_response.json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    own_centre_response = await raw_client.get(
+        f"/api/queue/centres/{home.id}", headers=headers
+    )
+    assert own_centre_response.status_code == 200
+
+    other_centre_response = await raw_client.get(
+        f"/api/queue/centres/{other.id}", headers=headers
+    )
+    assert other_centre_response.status_code == 403
 
 
 @pytest.mark.anyio

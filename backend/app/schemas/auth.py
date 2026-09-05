@@ -11,16 +11,35 @@ from app.models import UserRole
 # we need to send mail to.
 _EMAIL_PATTERN = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
-# ADMIN accounts are intentionally not self-registerable: allowing a caller
-# to POST their way into an admin role would defeat the entire RBAC model.
-# Admin users are provisioned out-of-band (seed data / an existing admin),
-# not through this public endpoint.
-SELF_REGISTERABLE_ROLES = (UserRole.FARMER, UserRole.CENTRE_STAFF)
+# Only FARMER accounts may be created through the public, unauthenticated
+# registration endpoint. Both CENTRE_STAFF and ADMIN are privileged roles
+# that grant access to other people's data (an entire procurement centre's
+# operations, or the whole admin surface) and must only ever be created by
+# an existing ADMIN via the /admin/users provisioning endpoint below.
+# Letting a caller self-select either of those roles here would defeat the
+# entire RBAC model, exactly as it did for CENTRE_STAFF prior to this fix.
+SELF_REGISTERABLE_ROLES = (UserRole.FARMER,)
+
+# Roles an authenticated ADMIN is allowed to provision via /admin/users.
+# ADMIN is included deliberately: this application's intended security
+# model permits an existing administrator to create further administrator
+# accounts (there is no other in-app path to do so, and the alternative -
+# no way to ever add a second admin - is worse from an operational
+# security standpoint). This is an explicit design decision, not an
+# oversight; if that changes, tighten this tuple rather than the endpoint.
+ADMIN_PROVISIONABLE_ROLES = (UserRole.FARMER, UserRole.CENTRE_STAFF, UserRole.ADMIN)
 
 
-class UserRegister(BaseModel):
+class _RoleResourceMixin(BaseModel):
+    """Shared email/role fields for both registration paths.
+
+    Subclasses restrict which roles are acceptable for their entry point;
+    the role/resource pairing itself (FARMER needs farmer_id and no
+    centre_id, etc.) is enforced later in the service layer, where the
+    check can also confirm the referenced farmer/centre actually exists.
+    """
+
     email: str = Field(min_length=3, max_length=255)
-    password: str = Field(min_length=8, max_length=128)
     role: UserRole
     farmer_id: int | None = Field(
         default=None, description="Required, and only valid, when role=FARMER."
@@ -36,11 +55,36 @@ class UserRegister(BaseModel):
             raise ValueError("Must be a valid email address")
         return value.lower()
 
+
+class UserRegister(_RoleResourceMixin):
+    """Public, unauthenticated self-registration. FARMER only."""
+
+    password: str = Field(min_length=8, max_length=128)
+
     @field_validator("role")
     @classmethod
     def _role_must_be_self_registerable(cls, value: UserRole) -> UserRole:
         if value not in SELF_REGISTERABLE_ROLES:
             raise ValueError("This role cannot be self-registered")
+        return value
+
+
+class AdminUserCreate(_RoleResourceMixin):
+    """ADMIN-only account provisioning (FARMER, CENTRE_STAFF, or ADMIN).
+
+    Reachable only through POST /api/admin/users, which is protected by
+    `require_admin` at the router level - this schema does not itself
+    enforce authentication, only that the requested role is one an admin
+    is allowed to provision at all.
+    """
+
+    password: str = Field(min_length=8, max_length=128)
+
+    @field_validator("role")
+    @classmethod
+    def _role_must_be_admin_provisionable(cls, value: UserRole) -> UserRole:
+        if value not in ADMIN_PROVISIONABLE_ROLES:
+            raise ValueError("This role cannot be provisioned")
         return value
 
 

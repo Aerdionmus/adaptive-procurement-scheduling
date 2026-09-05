@@ -17,11 +17,11 @@ async def register(
     payload: UserRegister,
     session: Session = Depends(get_db),
 ) -> UserResponse:
-    """Self-registration for FARMER and CENTRE_STAFF accounts.
+    """Public, unauthenticated self-registration. FARMER only.
 
-    ADMIN cannot be self-registered here (enforced by the request schema),
-    and CENTRE_STAFF is scoped to exactly one procurement centre at
-    registration time.
+    CENTRE_STAFF and ADMIN cannot be self-registered here (enforced by the
+    request schema's role validator) - both are privileged roles and must
+    be provisioned by an existing ADMIN via POST /api/admin/users instead.
     """
     try:
         return auth_service.register_user(session, payload)
