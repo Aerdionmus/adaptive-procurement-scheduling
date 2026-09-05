@@ -26,3 +26,7 @@ websockets==17.1
 alembic==1.14.0
 httpx==0.28.1
 pytest==8.4.2
+
+# Phase 4 security hardening (auth/RBAC)
+PyJWT==2.10.1
+python-multipart==0.0.20

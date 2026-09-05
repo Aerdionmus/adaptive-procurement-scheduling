@@ -58,7 +58,7 @@ DEMO_FARMERS = (
 # date. Keeping demo dates strictly in the future preserves that existing,
 # already-validated behavior instead of requiring changes to the check-in
 # guard.
-DEMO_DAY_OFFSETS = (1, 2, 3)  # tomorrow, +2 days, +3 days
+DEMO_DAY_OFFSETS = (10, 11, 12)  # +10, +11, +12 days
 # Positional indices (0, 1, 2) into the tuple returned by `_demo_dates()`,
 # used by DEMO_BOOKINGS below to reference "the seed's 1st/2nd/3rd demo
 # date" without hardcoding an actual calendar date or day-count offset.

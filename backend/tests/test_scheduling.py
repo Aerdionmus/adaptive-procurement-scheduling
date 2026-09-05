@@ -25,6 +25,7 @@ from app.models import (
     ThroughputSnapshot,
 )
 from app.services.eta import DEFAULT_AVERAGE_SERVICE_MINUTES
+from tests._auth_helpers import auth_headers, create_admin
 
 # --------------------------------------------------------------------------
 # Fixtures (mirrors the sqlite + Alembic pattern used across the test suite)
@@ -63,9 +64,19 @@ async def client(db_session: Session) -> AsyncClient:
         yield db_session
 
     app.dependency_overrides[get_db] = override_get_db
+    # Regression/business-logic tests in this file exercise the existing
+    # workflows end-to-end and aren't themselves testing authorization, so
+    # the default client authenticates as an ADMIN (who can reach every
+    # endpoint). Dedicated authorization/IDOR behavior is covered by
+    # tests/test_security.py using its own, more narrowly-scoped clients.
+    admin = create_admin(db_session, email="test_scheduling-admin@example.test")
     transport = ASGITransport(app=app)
     try:
-        async with AsyncClient(transport=transport, base_url="http://testserver") as client:
+        async with AsyncClient(
+            transport=transport,
+            base_url="http://testserver",
+            headers=auth_headers(admin),
+        ) as client:
             yield client
     finally:
         app.dependency_overrides.clear()

@@ -1,3 +1,4 @@
+from app.models.auth import User, UserRole
 from app.models.domain import (
     Booking,
     BookingStatus,
@@ -22,4 +23,6 @@ __all__ = [
     "BookingStatus",
     "QueueStatus",
     "NotificationChannel",
+    "User",
+    "UserRole",
 ]

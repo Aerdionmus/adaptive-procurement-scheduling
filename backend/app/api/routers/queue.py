@@ -1,7 +1,16 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
+from app.api.deps import (
+    ensure_booking_access,
+    ensure_centre_scope,
+    get_current_user,
+    require_centre_staff_or_admin,
+)
 from app.db.session import get_db
+from app.models import User
+from app.repositories import bookings as booking_repository
+from app.repositories import queue as queue_repository
 from app.schemas.eta import QueueETAResponse
 from app.schemas.queue import QueueCheckInCreate, QueueEntryResponse
 from app.services import eta as eta_service
@@ -18,7 +27,17 @@ def _raise_queue_error(error: queue_service.QueueError) -> None:
 async def check_in_booking(
     check_in_data: QueueCheckInCreate,
     session: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> QueueEntryResponse:
+    # Ownership is checked before the service call: a farmer may only
+    # check themselves in, centre staff/admin may check in any booking at
+    # their own centre.
+    booking = booking_repository.get_booking(session, check_in_data.booking_id)
+    if booking is None:
+        raise HTTPException(status_code=404, detail="Booking not found")
+    ensure_booking_access(
+        current_user, farmer_id=booking.farmer_id, centre_id=check_in_data.centre_id
+    )
     try:
         return queue_service.check_in_booking(
             session,
@@ -33,7 +52,9 @@ async def check_in_booking(
 async def get_live_queue(
     centre_id: int,
     session: Session = Depends(get_db),
+    current_user: User = Depends(require_centre_staff_or_admin),
 ) -> list[QueueEntryResponse]:
+    ensure_centre_scope(current_user, centre_id)
     try:
         return queue_service.list_live_queue(session, centre_id)
     except queue_service.QueueError as error:
@@ -44,7 +65,9 @@ async def get_live_queue(
 async def call_next_farmer(
     centre_id: int,
     session: Session = Depends(get_db),
+    current_user: User = Depends(require_centre_staff_or_admin),
 ) -> QueueEntryResponse:
+    ensure_centre_scope(current_user, centre_id)
     try:
         return queue_service.call_next_farmer(session, centre_id)
     except queue_service.QueueError as error:
@@ -55,7 +78,12 @@ async def call_next_farmer(
 async def start_serving(
     queue_entry_id: int,
     session: Session = Depends(get_db),
+    current_user: User = Depends(require_centre_staff_or_admin),
 ) -> QueueEntryResponse:
+    entry = queue_repository.get_queue_entry(session, queue_entry_id)
+    if entry is None:
+        raise HTTPException(status_code=404, detail="Queue entry not found")
+    ensure_centre_scope(current_user, entry.centre_id)
     try:
         return queue_service.start_serving(session, queue_entry_id)
     except queue_service.QueueError as error:
@@ -66,7 +94,12 @@ async def start_serving(
 async def complete_service(
     queue_entry_id: int,
     session: Session = Depends(get_db),
+    current_user: User = Depends(require_centre_staff_or_admin),
 ) -> QueueEntryResponse:
+    entry = queue_repository.get_queue_entry(session, queue_entry_id)
+    if entry is None:
+        raise HTTPException(status_code=404, detail="Queue entry not found")
+    ensure_centre_scope(current_user, entry.centre_id)
     try:
         return queue_service.complete_service(session, queue_entry_id)
     except queue_service.QueueError as error:
@@ -77,7 +110,12 @@ async def complete_service(
 async def mark_no_show(
     queue_entry_id: int,
     session: Session = Depends(get_db),
+    current_user: User = Depends(require_centre_staff_or_admin),
 ) -> QueueEntryResponse:
+    entry = queue_repository.get_queue_entry(session, queue_entry_id)
+    if entry is None:
+        raise HTTPException(status_code=404, detail="Queue entry not found")
+    ensure_centre_scope(current_user, entry.centre_id)
     try:
         return queue_service.mark_no_show(session, queue_entry_id)
     except queue_service.QueueError as error:
@@ -88,7 +126,14 @@ async def mark_no_show(
 async def get_queue_eta(
     queue_entry_id: int,
     session: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> QueueETAResponse:
+    entry = queue_repository.get_queue_entry(session, queue_entry_id)
+    if entry is None:
+        raise HTTPException(status_code=404, detail="Queue entry not found")
+    ensure_booking_access(
+        current_user, farmer_id=entry.booking.farmer_id, centre_id=entry.centre_id
+    )
     try:
         return eta_service.calculate_eta(session, queue_entry_id)
     except queue_service.QueueError as error:

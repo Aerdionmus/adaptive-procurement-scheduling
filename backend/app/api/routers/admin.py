@@ -1,12 +1,17 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
+from app.api.deps import require_admin
 from app.db.session import get_db
 from app.repositories import throughput as throughput_repository
 from app.schemas.throughput import ThroughputSnapshotResponse
 from app.services import throughput as throughput_service
 
-router = APIRouter()
+# Router-level dependency: every route under /admin requires an
+# authenticated ADMIN. This is deliberately enforced once, at the router,
+# rather than per-route, so a new admin route can never be added here
+# without protection by construction.
+router = APIRouter(dependencies=[Depends(require_admin)])
 
 
 @router.get("/")
