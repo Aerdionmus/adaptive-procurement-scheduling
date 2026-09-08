@@ -2,7 +2,8 @@ import { useEffect, useState } from "react";
 import { AppShell } from "./components/AppShell";
 import { LoadingState } from "./components/StateViews";
 import { useHashRoute } from "./core/router";
-import { getStoredFarmer } from "./core/storage";
+import { clearAuthSession, getAuthSession } from "./core/authStore";
+import { clearStoredFarmer, getStoredFarmer } from "./core/storage";
 import { Onboarding } from "./screens/Onboarding";
 import { FarmerHome } from "./screens/FarmerHome";
 import { BookSlot } from "./screens/BookSlot";
@@ -20,8 +21,24 @@ const TITLES = {
   staff: "Centre dashboard",
 };
 
+// A stored farmer profile is only useful paired with a live FARMER auth
+// session (the booking/queue/scheduling endpoints all require the bearer
+// token - see backend/app/api/deps.py). If the token is missing (cleared
+// by api/client.js after a 401, or never issued) but a farmer profile is
+// still cached from a previous session, treat the farmer as logged out
+// rather than showing screens that would just fail every API call.
+function currentFarmerSession() {
+  const farmer = getStoredFarmer();
+  const auth = getAuthSession();
+  if (farmer && auth?.role === "FARMER" && auth.token) {
+    return farmer;
+  }
+  if (farmer) clearStoredFarmer();
+  return null;
+}
+
 function App() {
-  const [farmer, setFarmer] = useState(() => getStoredFarmer());
+  const [farmer, setFarmer] = useState(() => currentFarmerSession());
   const route = useHashRoute();
 
   // Keep the tab title in sync with whichever screen is active, mostly so
@@ -80,6 +97,11 @@ function App() {
       segments={segments}
       title={title}
       onBack={showBack ? () => window.history.back() : undefined}
+      onLogout={() => {
+        clearAuthSession();
+        clearStoredFarmer();
+        setFarmer(null);
+      }}
     >
       {screen}
     </AppShell>

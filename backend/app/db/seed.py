@@ -1,12 +1,13 @@
 from __future__ import annotations
 
-from datetime import date, datetime, time, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
 from typing import Any
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.core.security import hash_password
 from app.db.session import SessionLocal
 from app.models import (
     Booking,
@@ -19,6 +20,8 @@ from app.models import (
     QueueEntry,
     QueueStatus,
     ThroughputSnapshot,
+    User,
+    UserRole,
 )
 
 
@@ -45,7 +48,50 @@ DEMO_FARMERS = (
     {"name": "Muthuvel", "phone": "9000000005", "village": "Thiruvaiyaru"},
 )
 
-DEMO_DATES = (date(2026, 10, 1), date(2026, 10, 2), date(2026, 10, 3))
+# Demo login accounts for CENTRE_STAFF and ADMIN, so a fresh clone has a
+# working staff/admin login for the demo out of the box (see README).
+# Deliberately does NOT create login accounts for the demo farmers above:
+# the farmer-facing demo path is "sign up as a new farmer" through the
+# onboarding screen (POST /api/farmers/ + POST /api/auth/register), which
+# exercises the real registration flow end-to-end. Seeding a User tied to
+# an existing demo Farmer would also collide with the `users.farmer_id`
+# uniqueness constraint the moment a test or demo run tried to register
+# one of these farmers a second time.
+#
+# These are demo-only credentials for a local/test database seeded from
+# this script - never used for a real deployment's data.
+DEMO_ADMIN = {"email": "admin@demo.test", "password": "AdminDemo123!"}
+DEMO_STAFF = (
+    {
+        "email": "staff.thanjavur@demo.test",
+        "centre_code": "TNJ-CENTRAL-01",
+        "password": "StaffDemo123!",
+    },
+    {
+        "email": "staff.kumbakonam@demo.test",
+        "centre_code": "KUM-01",
+        "password": "StaffDemo123!",
+    },
+)
+
+# The demo dataset used to pin bookings to fixed October 2026 dates. That
+# meant the seeded slots quietly became unbookable "past" data once that
+# week elapsed. Demo dates are now generated relative to whenever the seed
+# actually runs (see `_demo_dates`), so a fresh seed always produces
+# usable near-future slots regardless of the current date.
+#
+# Offsets deliberately start at +1 (tomorrow) rather than +0 (today):
+# app/services/queue.py's early-check-in guard only restricts check-ins for
+# a slot dated exactly "today" (see `_reject_early_check_in`), specifically
+# because it was designed around demo data that never lands on the current
+# date. Keeping demo dates strictly in the future preserves that existing,
+# already-validated behavior instead of requiring changes to the check-in
+# guard.
+DEMO_DAY_OFFSETS = (10, 11, 12)  # +10, +11, +12 days
+# Positional indices (0, 1, 2) into the tuple returned by `_demo_dates()`,
+# used by DEMO_BOOKINGS below to reference "the seed's 1st/2nd/3rd demo
+# date" without hardcoding an actual calendar date or day-count offset.
+DEMO_DATE_POSITIONS = (0, 1, 2)
 DEMO_TIME_WINDOWS = (
     (time(9, 0), time(10, 0)),
     (time(10, 30), time(11, 30)),
@@ -56,7 +102,7 @@ DEMO_BOOKINGS = (
     {
         "phone": "9000000001",
         "centre_code": "TNJ-CENTRAL-01",
-        "slot_date": DEMO_DATES[0],
+        "date_offset": DEMO_DATE_POSITIONS[0],
         "start_time": time(9, 0),
         "crop_type": "Paddy",
         "quantity_kg": Decimal("1250.00"),
@@ -65,7 +111,7 @@ DEMO_BOOKINGS = (
     {
         "phone": "9000000002",
         "centre_code": "TNJ-CENTRAL-01",
-        "slot_date": DEMO_DATES[0],
+        "date_offset": DEMO_DATE_POSITIONS[0],
         "start_time": time(10, 30),
         "crop_type": "Groundnut",
         "quantity_kg": Decimal("680.00"),
@@ -74,7 +120,7 @@ DEMO_BOOKINGS = (
     {
         "phone": "9000000003",
         "centre_code": "KUM-01",
-        "slot_date": DEMO_DATES[1],
+        "date_offset": DEMO_DATE_POSITIONS[1],
         "start_time": time(9, 0),
         "crop_type": "Black Gram",
         "quantity_kg": Decimal("420.00"),
@@ -83,7 +129,7 @@ DEMO_BOOKINGS = (
     {
         "phone": "9000000004",
         "centre_code": "KUM-01",
-        "slot_date": DEMO_DATES[1],
+        "date_offset": DEMO_DATE_POSITIONS[1],
         "start_time": time(10, 30),
         "crop_type": "Cotton",
         "quantity_kg": Decimal("940.00"),
@@ -92,13 +138,25 @@ DEMO_BOOKINGS = (
     {
         "phone": "9000000005",
         "centre_code": "TNJ-CENTRAL-01",
-        "slot_date": DEMO_DATES[2],
+        "date_offset": DEMO_DATE_POSITIONS[2],
         "start_time": time(14, 0),
         "crop_type": "Paddy",
         "quantity_kg": Decimal("1100.00"),
         "status": BookingStatus.BOOKED,
     },
 )
+
+
+def _demo_dates(today: date | None = None) -> tuple[date, ...]:
+    """Return the rolling demo dates, anchored to ``today`` (or the real
+    current date when not provided).
+
+    Kept deliberately simple: a small rolling window of near-future dates
+    so the seeded data is always usable on whatever day the seed is run,
+    without adding an external dependency or a new table.
+    """
+    base = today if today is not None else date.today()
+    return tuple(base + timedelta(days=offset) for offset in DEMO_DAY_OFFSETS)
 
 
 def _record_counts(session: Session) -> dict[str, int]:
@@ -110,6 +168,7 @@ def _record_counts(session: Session) -> dict[str, int]:
         "queue_entries": QueueEntry,
         "throughput_snapshots": ThroughputSnapshot,
         "notification_logs": NotificationLog,
+        "users": User,
     }
     return {
         name: session.scalar(select(func.count()).select_from(model)) or 0
@@ -117,8 +176,14 @@ def _record_counts(session: Session) -> dict[str, int]:
     }
 
 
-def seed_demo_data(session: Session) -> dict[str, int]:
-    """Create the fixed demo dataset and return the resulting table counts."""
+def seed_demo_data(session: Session, today: date | None = None) -> dict[str, int]:
+    """Create the demo dataset and return the resulting table counts.
+
+    Slot/booking dates are generated relative to ``today`` (or the real
+    current date when not provided) so the seeded data stays usable no
+    matter when the seed is actually run.
+    """
+    demo_dates = _demo_dates(today)
     try:
         centres: dict[str, ProcurementCentre] = {}
         for centre_data in DEMO_CENTRES:
@@ -146,7 +211,7 @@ def seed_demo_data(session: Session) -> dict[str, int]:
 
         slots: dict[tuple[str, date, time], ProcurementSlot] = {}
         for centre_code, centre in centres.items():
-            for slot_date in DEMO_DATES:
+            for slot_date in demo_dates:
                 for start_time, end_time in DEMO_TIME_WINDOWS:
                     slot = session.scalar(
                         select(ProcurementSlot).where(
@@ -174,7 +239,7 @@ def seed_demo_data(session: Session) -> dict[str, int]:
             slot = slots[
                 (
                     booking_data["centre_code"],
-                    booking_data["slot_date"],
+                    demo_dates[booking_data["date_offset"]],
                     booking_data["start_time"],
                 )
             ]
@@ -273,6 +338,31 @@ def seed_demo_data(session: Session) -> dict[str, int]:
                         delivery_state="DELIVERED",
                     )
                 )
+        session.flush()
+
+        admin_user = session.scalar(select(User).where(User.email == DEMO_ADMIN["email"]))
+        if admin_user is None:
+            session.add(
+                User(
+                    email=DEMO_ADMIN["email"],
+                    hashed_password=hash_password(DEMO_ADMIN["password"]),
+                    role=UserRole.ADMIN,
+                )
+            )
+
+        for staff_data in DEMO_STAFF:
+            staff_user = session.scalar(
+                select(User).where(User.email == staff_data["email"])
+            )
+            if staff_user is None:
+                session.add(
+                    User(
+                        email=staff_data["email"],
+                        hashed_password=hash_password(staff_data["password"]),
+                        role=UserRole.CENTRE_STAFF,
+                        centre_id=centres[staff_data["centre_code"]].id,
+                    )
+                )
 
         session.commit()
     except Exception:
@@ -287,6 +377,17 @@ def main() -> None:
         counts = seed_demo_data(session)
     count_text = ", ".join(f"{name}={count}" for name, count in counts.items())
     print(f"Demo data seeded: {count_text}")
+    print("Demo login accounts:")
+    print(f"  ADMIN         {DEMO_ADMIN['email']} / {DEMO_ADMIN['password']}")
+    for staff_data in DEMO_STAFF:
+        print(
+            f"  CENTRE_STAFF  {staff_data['email']} / {staff_data['password']}"
+            f" ({staff_data['centre_code']})"
+        )
+    print(
+        "  FARMER        no seeded account - sign up as a new farmer via "
+        "the onboarding screen"
+    )
 
 
 if __name__ == "__main__":

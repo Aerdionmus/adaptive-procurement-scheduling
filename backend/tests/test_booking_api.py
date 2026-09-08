@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, time
 from pathlib import Path
 
 import pytest
@@ -13,6 +14,7 @@ from app.db.seed import seed_demo_data
 from app.db.session import get_db
 from app.main import app
 from app.models import Booking, Farmer, ProcurementCentre, ProcurementSlot
+from tests._auth_helpers import create_admin, auth_headers
 
 
 @pytest.fixture
@@ -40,9 +42,19 @@ async def client(db_session: Session) -> AsyncClient:
         yield db_session
 
     app.dependency_overrides[get_db] = override_get_db
+    # Regression/business-logic tests in this file exercise the existing
+    # workflows end-to-end and aren't themselves testing authorization, so
+    # the default client authenticates as an ADMIN (who can reach every
+    # endpoint). Dedicated authorization/IDOR behavior is covered by
+    # tests/test_security.py using its own, more narrowly-scoped clients.
+    admin = create_admin(db_session, email="booking-api-admin@example.test")
     transport = ASGITransport(app=app)
     try:
-        async with AsyncClient(transport=transport, base_url="http://testserver") as client:
+        async with AsyncClient(
+            transport=transport,
+            base_url="http://testserver",
+            headers=auth_headers(admin),
+        ) as client:
             yield client
     finally:
         app.dependency_overrides.clear()
@@ -98,11 +110,10 @@ async def test_create_farmer(client: AsyncClient) -> None:
 
 
 @pytest.mark.anyio
-async def test_list_farmers(client: AsyncClient) -> None:
+async def test_list_farmers_endpoint_is_disabled(client: AsyncClient) -> None:
     response = await client.get("/api/farmers/")
 
-    assert response.status_code == 200
-    assert len(response.json()) == 5
+    assert response.status_code == 405
 
 
 @pytest.mark.anyio
@@ -237,6 +248,43 @@ async def test_create_booking_rejects_centre_slot_mismatch(
 
     assert response.status_code == 422
     assert response.json()["detail"] == "Procurement slot does not belong to the selected centre"
+
+
+@pytest.mark.anyio
+async def test_create_booking_rejects_expired_slot(
+    client: AsyncClient,
+    db_session: Session,
+) -> None:
+    payload = booking_payload(db_session)
+    slot = db_session.get(ProcurementSlot, payload["slot_id"])
+    assert slot is not None
+
+    original_capacity = slot.capacity
+    booking_count_before = len(
+        db_session.scalars(
+            select(Booking).where(Booking.slot_id == slot.id)
+        ).all()
+    )
+
+    slot.slot_date = datetime(2020, 1, 1).date()
+    slot.start_time = time(9, 0)
+    slot.end_time = time(10, 0)
+    db_session.commit()
+
+    response = await client.post("/api/bookings/", json=payload)
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "Procurement slot has expired"
+
+    db_session.refresh(slot)
+    assert slot.capacity == original_capacity
+
+    booking_count_after = len(
+        db_session.scalars(
+            select(Booking).where(Booking.slot_id == slot.id)
+        ).all()
+    )
+    assert booking_count_after == booking_count_before
 
 
 @pytest.mark.anyio

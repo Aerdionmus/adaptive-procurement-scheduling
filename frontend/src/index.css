@@ -1430,6 +1430,23 @@ button {
   gap: 24px;
 }
 
+.staff-dashboard__toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  font-size: 0.88rem;
+  color: var(--color-text);
+}
+
+.staff-dashboard__toolbar .btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  width: auto;
+}
+
 .staff-dashboard {
   display: flex;
   flex-direction: column;

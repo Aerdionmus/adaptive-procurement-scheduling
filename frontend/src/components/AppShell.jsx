@@ -5,6 +5,7 @@ import {
   IconHistory,
   IconHome,
   IconLayoutGrid,
+  IconLogOut,
   IconWheat,
 } from "./icons";
 
@@ -21,7 +22,7 @@ const NAV_ITEMS = [
   },
 ];
 
-export function AppShell({ segments, title, onBack, children }) {
+export function AppShell({ segments, title, onBack, onLogout, children }) {
   return (
     <div className="app-shell">
       <div className="app-shell__body">
@@ -86,7 +87,18 @@ export function AppShell({ segments, title, onBack, children }) {
               <span className="app-shell__brand" aria-hidden="true" />
             )}
             <span className="app-shell__title">{title}</span>
-            <span className="app-shell__spacer" aria-hidden="true" />
+            {onLogout ? (
+              <button
+                type="button"
+                className="icon-button"
+                onClick={onLogout}
+                aria-label="Log out"
+              >
+                <IconLogOut aria-hidden="true" />
+              </button>
+            ) : (
+              <span className="app-shell__spacer" aria-hidden="true" />
+            )}
           </header>
 
           <main className="app-shell__content">

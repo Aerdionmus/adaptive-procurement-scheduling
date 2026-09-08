@@ -31,6 +31,8 @@ def create_booking(session: Session, booking_data: BookingCreate) -> Booking:
         raise BookingError("Procurement slot not found", 404)
     if slot.centre_id != centre.id:
         raise BookingError("Procurement slot does not belong to the selected centre", 422)
+    if procurement_repository.is_slot_expired(slot):
+        raise BookingError("Procurement slot has expired", 409)
 
     try:
         if not procurement_repository.reserve_slot_capacity(session, slot.id):
