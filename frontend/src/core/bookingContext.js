@@ -27,7 +27,7 @@ export async function loadBookingContext(bookingId) {
   // which (unlike the centre's "usable slots" listing) returns the slot
   // regardless of remaining capacity. This keeps a booking's date/time and
   // adaptive status visible even after the slot fills up to capacity 0.
-  let slot = null;
+  let slot;
   try {
     slot = await getSlot(booking.slot_id);
   } catch {

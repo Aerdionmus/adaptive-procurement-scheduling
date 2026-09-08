@@ -7,6 +7,7 @@ from typing import Any
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.core.security import hash_password
 from app.db.session import SessionLocal
 from app.models import (
     Booking,
@@ -19,6 +20,8 @@ from app.models import (
     QueueEntry,
     QueueStatus,
     ThroughputSnapshot,
+    User,
+    UserRole,
 )
 
 
@@ -43,6 +46,32 @@ DEMO_FARMERS = (
     {"name": "R. Selvam", "phone": "9000000003", "village": "Orathanadu"},
     {"name": "Lakshmi Priya", "phone": "9000000004", "village": "Swamimalai"},
     {"name": "Muthuvel", "phone": "9000000005", "village": "Thiruvaiyaru"},
+)
+
+# Demo login accounts for CENTRE_STAFF and ADMIN, so a fresh clone has a
+# working staff/admin login for the demo out of the box (see README).
+# Deliberately does NOT create login accounts for the demo farmers above:
+# the farmer-facing demo path is "sign up as a new farmer" through the
+# onboarding screen (POST /api/farmers/ + POST /api/auth/register), which
+# exercises the real registration flow end-to-end. Seeding a User tied to
+# an existing demo Farmer would also collide with the `users.farmer_id`
+# uniqueness constraint the moment a test or demo run tried to register
+# one of these farmers a second time.
+#
+# These are demo-only credentials for a local/test database seeded from
+# this script - never used for a real deployment's data.
+DEMO_ADMIN = {"email": "admin@demo.test", "password": "AdminDemo123!"}
+DEMO_STAFF = (
+    {
+        "email": "staff.thanjavur@demo.test",
+        "centre_code": "TNJ-CENTRAL-01",
+        "password": "StaffDemo123!",
+    },
+    {
+        "email": "staff.kumbakonam@demo.test",
+        "centre_code": "KUM-01",
+        "password": "StaffDemo123!",
+    },
 )
 
 # The demo dataset used to pin bookings to fixed October 2026 dates. That
@@ -139,6 +168,7 @@ def _record_counts(session: Session) -> dict[str, int]:
         "queue_entries": QueueEntry,
         "throughput_snapshots": ThroughputSnapshot,
         "notification_logs": NotificationLog,
+        "users": User,
     }
     return {
         name: session.scalar(select(func.count()).select_from(model)) or 0
@@ -308,6 +338,31 @@ def seed_demo_data(session: Session, today: date | None = None) -> dict[str, int
                         delivery_state="DELIVERED",
                     )
                 )
+        session.flush()
+
+        admin_user = session.scalar(select(User).where(User.email == DEMO_ADMIN["email"]))
+        if admin_user is None:
+            session.add(
+                User(
+                    email=DEMO_ADMIN["email"],
+                    hashed_password=hash_password(DEMO_ADMIN["password"]),
+                    role=UserRole.ADMIN,
+                )
+            )
+
+        for staff_data in DEMO_STAFF:
+            staff_user = session.scalar(
+                select(User).where(User.email == staff_data["email"])
+            )
+            if staff_user is None:
+                session.add(
+                    User(
+                        email=staff_data["email"],
+                        hashed_password=hash_password(staff_data["password"]),
+                        role=UserRole.CENTRE_STAFF,
+                        centre_id=centres[staff_data["centre_code"]].id,
+                    )
+                )
 
         session.commit()
     except Exception:
@@ -322,6 +377,17 @@ def main() -> None:
         counts = seed_demo_data(session)
     count_text = ", ".join(f"{name}={count}" for name, count in counts.items())
     print(f"Demo data seeded: {count_text}")
+    print("Demo login accounts:")
+    print(f"  ADMIN         {DEMO_ADMIN['email']} / {DEMO_ADMIN['password']}")
+    for staff_data in DEMO_STAFF:
+        print(
+            f"  CENTRE_STAFF  {staff_data['email']} / {staff_data['password']}"
+            f" ({staff_data['centre_code']})"
+        )
+    print(
+        "  FARMER        no seeded account - sign up as a new farmer via "
+        "the onboarding screen"
+    )
 
 
 if __name__ == "__main__":

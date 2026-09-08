@@ -9,7 +9,7 @@ from alembic.config import Config
 from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import Session, sessionmaker
 
-from app.db.seed import DEMO_DAY_OFFSETS, _demo_dates, seed_demo_data
+from app.db.seed import DEMO_ADMIN, DEMO_DAY_OFFSETS, DEMO_STAFF, _demo_dates, seed_demo_data
 from app.models import (
     Booking,
     Farmer,
@@ -18,6 +18,8 @@ from app.models import (
     ProcurementSlot,
     QueueEntry,
     ThroughputSnapshot,
+    User,
+    UserRole,
 )
 
 EXPECTED_COUNTS = {
@@ -28,6 +30,7 @@ EXPECTED_COUNTS = {
     "queue_entries": 3,
     "throughput_snapshots": 2,
     "notification_logs": 2,
+    "users": 3,
 }
 
 
@@ -67,6 +70,7 @@ def test_seed_is_idempotent(db_session: Session) -> None:
         "notification_logs": db_session.scalar(
             select(func.count()).select_from(NotificationLog)
         ),
+        "users": db_session.scalar(select(func.count()).select_from(User)),
     }
 
     assert seed_demo_data(db_session) == first_counts == EXPECTED_COUNTS
@@ -91,6 +95,28 @@ def test_seeded_foreign_key_relationships_are_valid(db_session: Session) -> None
 
     for notification in db_session.scalars(select(NotificationLog)).all():
         assert notification.booking is not None
+
+
+def test_seed_creates_working_admin_and_staff_login_accounts(db_session: Session) -> None:
+    """The demo needs a working staff/admin login out of the box - see
+    seed.py's DEMO_ADMIN/DEMO_STAFF docstring for why farmer accounts are
+    deliberately not seeded the same way."""
+    seed_demo_data(db_session)
+
+    admin = db_session.scalar(select(User).where(User.email == DEMO_ADMIN["email"]))
+    assert admin is not None
+    assert admin.role == UserRole.ADMIN
+    assert admin.farmer_id is None
+    assert admin.centre_id is None
+    assert admin.is_active
+
+    for staff_data in DEMO_STAFF:
+        staff_user = db_session.scalar(select(User).where(User.email == staff_data["email"]))
+        assert staff_user is not None
+        assert staff_user.role == UserRole.CENTRE_STAFF
+        assert staff_user.farmer_id is None
+        assert staff_user.centre is not None
+        assert staff_user.centre.code == staff_data["centre_code"]
 
 
 # --------------------------------------------------------------------------

@@ -270,6 +270,68 @@ async def test_farmer_owner_can_access_their_own_booking(
 
 
 @pytest.mark.anyio
+async def test_farmer_can_view_their_own_profile(
+    raw_client: AsyncClient, db_session: Session
+) -> None:
+    owner = farmer(db_session, "9000000001")
+    owner_user = create_farmer_user(db_session, owner)
+
+    response = await raw_client.get(
+        f"/api/farmers/{owner.id}", headers=auth_headers(owner_user)
+    )
+    assert response.status_code == 200
+    assert response.json()["id"] == owner.id
+
+
+@pytest.mark.anyio
+async def test_farmer_cannot_view_another_farmers_profile(
+    raw_client: AsyncClient, db_session: Session
+) -> None:
+    caller = create_farmer_user(db_session, farmer(db_session, "9000000001"))
+    other_farmer = farmer(db_session, "9000000002")
+
+    response = await raw_client.get(
+        f"/api/farmers/{other_farmer.id}", headers=auth_headers(caller)
+    )
+    assert response.status_code == 403
+
+
+@pytest.mark.anyio
+async def test_staff_cannot_view_a_farmer_profile(
+    raw_client: AsyncClient, db_session: Session
+) -> None:
+    staff_user = create_staff_user(db_session, centre(db_session))
+    target_farmer = farmer(db_session, "9000000001")
+
+    response = await raw_client.get(
+        f"/api/farmers/{target_farmer.id}", headers=auth_headers(staff_user)
+    )
+    assert response.status_code == 403
+
+
+@pytest.mark.anyio
+async def test_admin_can_view_any_farmer_profile(
+    raw_client: AsyncClient, db_session: Session
+) -> None:
+    admin_user = create_admin(db_session)
+    target_farmer = farmer(db_session, "9000000001")
+
+    response = await raw_client.get(
+        f"/api/farmers/{target_farmer.id}", headers=auth_headers(admin_user)
+    )
+    assert response.status_code == 200
+
+
+@pytest.mark.anyio
+async def test_unauthenticated_farmer_profile_access_is_401(
+    raw_client: AsyncClient, db_session: Session
+) -> None:
+    target_farmer = farmer(db_session, "9000000001")
+    response = await raw_client.get(f"/api/farmers/{target_farmer.id}")
+    assert response.status_code == 401
+
+
+@pytest.mark.anyio
 async def test_farmer_cannot_create_booking_for_another_farmer(
     raw_client: AsyncClient, db_session: Session
 ) -> None:

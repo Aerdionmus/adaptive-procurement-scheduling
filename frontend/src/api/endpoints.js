@@ -1,7 +1,30 @@
 // Thin, named wrappers around the shared API client (client.js).
 // Screens and hooks call these instead of building URL strings inline, so
 // the request shape for each backend resource lives in exactly one place.
-import { getJson, postJson } from "./client";
+import { getJson, postForm, postJson } from "./client";
+
+// ---- Auth --------------------------------------------------------------
+// See backend/app/api/routers/auth.py. The bearer token these return is
+// attached to every other request automatically by api/client.js.
+
+export function registerUser({ email, password, role, farmerId, centreId }) {
+  return postJson("/api/auth/register", {
+    email,
+    password,
+    role,
+    farmer_id: farmerId ?? null,
+    centre_id: centreId ?? null,
+  });
+}
+
+export function login({ email, password }) {
+  // OAuth2 password flow: the form field is `username`, not `email`.
+  return postForm("/api/auth/login", { username: email, password });
+}
+
+export function getCurrentUser() {
+  return getJson("/api/auth/me");
+}
 
 // ---- Farmers ---------------------------------------------------------
 
@@ -9,8 +32,8 @@ export function createFarmer({ name, phone, village }) {
   return postJson("/api/farmers/", { name, phone, village });
 }
 
-export function listFarmers() {
-  return getJson("/api/farmers/");
+export function getFarmer(farmerId) {
+  return getJson(`/api/farmers/${farmerId}`);
 }
 
 // ---- Procurement centres & slots --------------------------------------
