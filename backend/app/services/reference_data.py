@@ -9,7 +9,11 @@ CLI's argument parsing.
 
 Kept independent from ``app/services/scheduling.py`` on purpose: this
 module never reads from or writes to any operational table (bookings,
-queue entries, throughput snapshots, procurement centres/slots).
+queue entries, throughput snapshots, procurement centres/slots). Milestone
+2's ``find_reference_context`` (below) is a read-only lookup added to this
+same "reference service" boundary - see
+``app/services/procurement_context.py`` for the one place that bridges
+this module with the operational/procurement domain.
 """
 
 from __future__ import annotations
@@ -287,3 +291,86 @@ def import_rows(
 
     session.commit()
     return result
+
+
+# --------------------------------------------------------------------------
+# Read-only lookup for procurement/scheduling integration (Milestone 2)
+# --------------------------------------------------------------------------
+#
+# Everything above this point is about getting REAL data safely INTO
+# reference_datasets. Everything below is the read side used by
+# app/services/procurement_context.py to bring already-imported reference
+# data OUT to the operational domain, as a plain dataclass rather than a
+# SQLAlchemy ORM object - so a caller in the procurement/scheduling layer
+# never needs to import ``ReferenceDataset`` or touch the ORM directly.
+
+
+@dataclass(frozen=True)
+class ReferenceContext:
+    """A read-only, fully explainable projection of one reference row.
+
+    Deliberately mirrors every field called out in the Milestone 2
+    explainability requirement - dataset_type, district, season_or_period,
+    metric_name, metric_value, unit, data_status, source,
+    source_reference, retrieved_at - and nothing else: no database id, no
+    imported_at, no raw_payload. Those are DB/import internals a
+    procurement/scheduling consumer has no use for.
+    """
+
+    dataset_type: str
+    district: str
+    season_or_period: str
+    metric_name: str
+    metric_value: Decimal
+    unit: str
+    data_status: str
+    source: str | None
+    source_reference: str | None
+    retrieved_at: datetime | None
+
+
+def _to_context(row: ReferenceDataset) -> ReferenceContext:
+    return ReferenceContext(
+        dataset_type=row.dataset_type,
+        district=row.district,
+        season_or_period=row.season_or_period,
+        metric_name=row.metric_name,
+        metric_value=row.metric_value,
+        unit=row.unit,
+        data_status=row.data_status,
+        source=row.source,
+        source_reference=row.source_reference,
+        retrieved_at=row.retrieved_at,
+    )
+
+
+def find_reference_context(
+    session: Session,
+    *,
+    district: str,
+    dataset_type: str | None = None,
+    metric_name: str | None = None,
+    season_or_period: str | None = None,
+) -> list[ReferenceContext]:
+    """Deterministic lookup of reference facts for a district.
+
+    Supports matching on all four fields required by Milestone 2
+    (district, dataset_type, metric_name, season_or_period); only
+    ``district`` is required, since the operational domain (a procurement
+    centre) always has a district but has no season/dataset_type/metric
+    concept of its own to filter by unless the caller supplies one
+    explicitly.
+
+    Returns an empty list - never ``None``, never raises - when nothing
+    matches. An empty list IS the correct, expected representation of "no
+    reference data for this district/filter combination yet"; callers
+    must not treat it as an error.
+    """
+    rows = reference_repository.list_reference_data(
+        session,
+        district=district,
+        dataset_type=dataset_type,
+        metric_name=metric_name,
+        season_or_period=season_or_period,
+    )
+    return [_to_context(row) for row in rows]

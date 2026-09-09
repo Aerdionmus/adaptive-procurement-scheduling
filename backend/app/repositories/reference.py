@@ -23,6 +23,7 @@ def list_reference_data(
     district: str | None = None,
     dataset_type: str | None = None,
     metric_name: str | None = None,
+    season_or_period: str | None = None,
 ) -> list[ReferenceDataset]:
     """Return reference rows matching the given filters (all optional).
 
@@ -36,6 +37,13 @@ def list_reference_data(
     ``retrieved_at.desc()`` would put undated DEMO/SIMULATED rows ahead of
     dated REAL rows in production while appearing correct under the
     SQLite-backed test suite.
+
+    ``season_or_period`` was added for Milestone 2's procurement/scheduling
+    integration (app/services/procurement_context.py), which needs to
+    support matching on all four fields the requirements call out
+    (district, season_or_period, metric_name, dataset_type). It is
+    optional and additive - every existing caller that doesn't pass it is
+    unaffected.
     """
     query = select(ReferenceDataset)
     if district is not None:
@@ -44,6 +52,8 @@ def list_reference_data(
         query = query.where(ReferenceDataset.dataset_type == dataset_type)
     if metric_name is not None:
         query = query.where(ReferenceDataset.metric_name == metric_name)
+    if season_or_period is not None:
+        query = query.where(ReferenceDataset.season_or_period == season_or_period)
     query = query.order_by(
         nullslast(ReferenceDataset.retrieved_at.desc()),
         ReferenceDataset.imported_at.desc(),

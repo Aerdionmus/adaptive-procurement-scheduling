@@ -174,8 +174,56 @@ provenance trail), not a silent overwrite of a previously-imported value.
   import. A live-fetch integration (`app/integrations/`) is a deliberately
   separate, later milestone, gated on an optional API-key env var so its
   absence never breaks the app.
-- Reference data is not wired into the scheduling/ETA engine. It is
-  contextual/reference information only, in this milestone.
+
+## Procurement/scheduling integration with reference data (Milestone 2)
+
+Reference data is now consumed by the operational side of the app, but
+only as read-only context - not as an input to any scheduling decision.
+
+**Endpoint:** `GET /api/centres/{centre_id}/reference-context` (public,
+matching this router's existing centre/slot listing endpoints) returns
+the reference facts available for that centre's district, optionally
+filtered by `dataset_type`, `metric_name`, and `season_or_period`. A
+centre whose district has no matching reference data returns
+`reference_facts: []` - a normal, expected result, not an error. Only a
+genuinely unknown `centre_id` returns 404.
+
+**Why district-only matching:** `ProcurementCentre.district` is the only
+field the operational schema and `reference_datasets` genuinely share.
+There is no `season_or_period` or controlled crop vocabulary anywhere in
+the operational schema, and `Booking.crop_type` is free text - so this
+integration does not attempt to auto-match a booking's crop to a
+reference `metric_name`; that would be a fabricated heuristic, not a fact
+drawn from the data. `season_or_period`/`dataset_type`/`metric_name` are
+available as explicit, caller-supplied filters instead.
+
+**Why no derived score/signal:** the one real dataset available at this
+milestone - district paddy area, in lakh hectares - has no defensible
+deterministic relationship to queue wait time or scheduling status.
+Rather than invent a threshold or scoring formula to make the integration
+look more sophisticated, Milestone 2 is a context/enrichment layer only.
+
+**Architecture:**
+
+```
+reference repository (app/repositories/reference.py)
+        v
+reference service (app/services/reference_data.py - find_reference_context)
+        v
+procurement/scheduling integration (app/services/procurement_context.py)
+        v
+API (app/api/routers/centres.py)
+```
+
+`app/services/scheduling.py`, `eta.py`, `throughput.py`, `queue.py`, and
+`bookings.py` are unmodified and do not import the reference-data layer
+at all - so a reference-data problem (missing table, bad row, unexpected
+query error) cannot structurally affect a scheduling/ETA/queue/booking
+decision. This is enforced by a test that inspects those modules' source
+for any reference-layer import, not just documented.
+
+No new database migration was needed - this milestone only reads
+existing `reference_datasets` rows at request time.
 
 ## Deployment
 
