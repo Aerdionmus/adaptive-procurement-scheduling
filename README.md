@@ -225,6 +225,23 @@ for any reference-layer import, not just documented.
 No new database migration was needed - this milestone only reads
 existing `reference_datasets` rows at request time.
 
+## Procurement insights (Milestone 3)
+
+`GET /api/centres/{centre_id}/procurement-insights` provides an authenticated
+centre-staff/admin view of the current operational state. It aggregates the
+existing queue, booking, throughput, ETA, and scheduling services into typed
+metrics, the existing `ON_TRACK`/`AT_RISK`/`DELAYED` status semantics, and
+structured attention items with operational evidence. The response also
+includes the centre's district reference facts, preserving their
+`data_status`, source, source reference, and retrieval timestamp.
+
+Reference facts are contextual only: they are never used to change queue
+ordering, ETA, throughput, or scheduling decisions. A valid centre with no
+matching reference rows still returns the operational insight with an empty
+`reference_context` list. Optional `dataset_type`, `metric_name`, and
+`season_or_period` query parameters apply the same explicit filters as the
+reference-context endpoint.
+
 ## Deployment
 
 The intended architecture is frontend on Vercel, backend on Render, and
