@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
 import { AppShell } from "./components/AppShell";
 import { LoadingState } from "./components/StateViews";
-import { useHashRoute } from "./core/router";
+import { useHashRoute, navigate } from "./core/router";
 import { clearAuthSession, getAuthSession } from "./core/authStore";
 import { clearStoredFarmer, getStoredFarmer } from "./core/storage";
+import { PortalSelection } from "./screens/PortalSelection";
 import { Onboarding } from "./screens/Onboarding";
 import { FarmerHome } from "./screens/FarmerHome";
 import { BookSlot } from "./screens/BookSlot";
@@ -14,19 +15,18 @@ import { StaffDashboard } from "./screens/StaffDashboard";
 
 const TITLES = {
   home: "Adaptive Procurement Scheduling",
+  portal: "Choose your portal",
+  onboarding: "Farmer registration",
   book: "Book a slot",
   confirmation: "Booking confirmed",
   track: "Track procurement",
   history: "Booking history",
-  staff: "Centre dashboard",
+  staff: "Operations portal",
 };
 
 // A stored farmer profile is only useful paired with a live FARMER auth
-// session (the booking/queue/scheduling endpoints all require the bearer
-// token - see backend/app/api/deps.py). If the token is missing (cleared
-// by api/client.js after a 401, or never issued) but a farmer profile is
-// still cached from a previous session, treat the farmer as logged out
-// rather than showing screens that would just fail every API call.
+// session. Staff/admin authentication is intentionally handled separately by
+// StaffDashboard and is never represented by farmer state.
 function currentFarmerSession() {
   const farmer = getStoredFarmer();
   const auth = getAuthSession();
@@ -40,30 +40,66 @@ function currentFarmerSession() {
 function App() {
   const [farmer, setFarmer] = useState(() => currentFarmerSession());
   const route = useHashRoute();
-
-  // Keep the tab title in sync with whichever screen is active, mostly so
-  // a judge flipping between browser tabs during the demo can tell them
-  // apart at a glance.
-  useEffect(() => {
-    document.title = `${resolveTitle(route.segments)} \u2013 Adaptive Procurement`;
-  }, [route.segments]);
-
   const { segments, params } = route;
   const [primary, secondary, tertiary] = segments;
+  const auth = getAuthSession();
+  const isStaffAuth = auth?.role === "CENTRE_STAFF" || auth?.role === "ADMIN";
 
-  // The staff/admin workspace is a separate audience from the farmer app
-  // and doesn't require a farmer onboarding session, so it's handled
-  // before the farmer gate below rather than folded into it.
+  useEffect(() => {
+    document.title = `${resolveTitle(segments)} – Adaptive Procurement`;
+  }, [segments]);
+
+  function finishFarmerOnboarding(profile) {
+    setFarmer(profile);
+    navigate("/");
+  }
+
+  // Staff/admin routes are a separate route space. StaffDashboard owns the
+  // staff login state and server-authorized centre access; farmer state is not
+  // involved in this branch.
   if (primary === "staff") {
     return (
-      <AppShell segments={segments} title={TITLES.staff}>
+      <AppShell workspace="staff" segments={segments} title={TITLES.staff}>
         <StaffDashboard params={params} />
       </AppShell>
     );
   }
 
+  if (primary === "onboarding") {
+    if (isStaffAuth) {
+      navigate("/staff");
+      return <LoadingState label="Opening operations portal…" />;
+    }
+    if (auth?.role === "FARMER" && farmer) {
+      navigate("/");
+      return <LoadingState label="Opening farmer portal…" />;
+    }
+    return (
+      <AppShell workspace="farmer" segments={segments} title={TITLES.onboarding}>
+        <Onboarding onDone={finishFarmerOnboarding} />
+      </AppShell>
+    );
+  }
+
+  if (segments.length === 0 && !auth) {
+    return (
+      <AppShell workspace="portal" segments={segments} title={TITLES.portal}>
+        <PortalSelection />
+      </AppShell>
+    );
+  }
+
+  if (isStaffAuth) {
+    navigate("/staff");
+    return <LoadingState label="Opening operations portal…" />;
+  }
+
   if (!farmer) {
-    return <Onboarding onDone={setFarmer} />;
+    return (
+      <AppShell workspace="farmer" segments={segments} title={TITLES.onboarding}>
+        <Onboarding onDone={finishFarmerOnboarding} />
+      </AppShell>
+    );
   }
 
   let screen;
@@ -80,7 +116,6 @@ function App() {
   } else if (primary === "booking" && tertiary === "confirmation") {
     screen = <BookingConfirmation bookingId={Number(secondary)} />;
     title = TITLES.confirmation;
-    showBack = false;
   } else if (primary === "track" && secondary) {
     screen = <TrackProcurement bookingId={Number(secondary)} />;
     title = TITLES.track;
@@ -89,11 +124,12 @@ function App() {
     screen = <BookingHistory />;
     title = TITLES.history;
   } else {
-    return <LoadingState label="Redirecting\u2026" />;
+    return <LoadingState label="Redirecting…" />;
   }
 
   return (
     <AppShell
+      workspace="farmer"
       segments={segments}
       title={title}
       onBack={showBack ? () => window.history.back() : undefined}
@@ -101,6 +137,7 @@ function App() {
         clearAuthSession();
         clearStoredFarmer();
         setFarmer(null);
+        navigate("/");
       }}
     >
       {screen}
@@ -110,6 +147,7 @@ function App() {
 
 function resolveTitle(segments) {
   if (segments.length === 0) return TITLES.home;
+  if (segments[0] === "onboarding") return TITLES.onboarding;
   if (segments[0] === "book") return TITLES.book;
   if (segments[0] === "booking") return TITLES.confirmation;
   if (segments[0] === "track") return TITLES.track;
