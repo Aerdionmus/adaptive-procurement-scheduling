@@ -29,7 +29,7 @@ const TITLES = {
 // StaffDashboard and is never represented by farmer state.
 function currentFarmerSession() {
   const farmer = getStoredFarmer();
-  const auth = getAuthSession();
+  const auth = getAuthSession("farmer");
   if (farmer && auth?.role === "FARMER" && auth.token) {
     return farmer;
   }
@@ -42,7 +42,9 @@ function App() {
   const route = useHashRoute();
   const { segments, params } = route;
   const [primary, secondary, tertiary] = segments;
-  const auth = getAuthSession();
+  const isFarmerEntry = primary === "farmer";
+  const farmerSegments = isFarmerEntry ? [] : segments;
+  const auth = getAuthSession("farmer");
   const isStaffAuth = auth?.role === "CENTRE_STAFF" || auth?.role === "ADMIN";
 
   useEffect(() => {
@@ -66,7 +68,7 @@ function App() {
   }
 
   if (primary === "onboarding") {
-    if (isStaffAuth) {
+    if (isStaffAuth && !isFarmerEntry) {
       navigate("/staff");
       return <LoadingState label="Opening operations portal…" />;
     }
@@ -75,13 +77,18 @@ function App() {
       return <LoadingState label="Opening farmer portal…" />;
     }
     return (
-      <AppShell workspace="farmer" segments={segments} title={TITLES.onboarding}>
+      <AppShell
+        workspace="farmer"
+        segments={segments}
+        title={TITLES.onboarding}
+        showNavigation={false}
+      >
         <Onboarding onDone={finishFarmerOnboarding} />
       </AppShell>
     );
   }
 
-  if (segments.length === 0 && !auth) {
+  if (segments.length === 0 && !auth && !isFarmerEntry) {
     return (
       <AppShell workspace="portal" segments={segments} title={TITLES.portal}>
         <PortalSelection />
@@ -89,14 +96,19 @@ function App() {
     );
   }
 
-  if (isStaffAuth) {
+  if (isStaffAuth && !isFarmerEntry) {
     navigate("/staff");
     return <LoadingState label="Opening operations portal…" />;
   }
 
   if (!farmer) {
     return (
-      <AppShell workspace="farmer" segments={segments} title={TITLES.onboarding}>
+      <AppShell
+        workspace="farmer"
+        segments={farmerSegments}
+        title={TITLES.onboarding}
+        showNavigation={false}
+      >
         <Onboarding onDone={finishFarmerOnboarding} />
       </AppShell>
     );
@@ -106,7 +118,7 @@ function App() {
   let title;
   let showBack = false;
 
-  if (segments.length === 0) {
+  if (isFarmerEntry || segments.length === 0) {
     screen = <FarmerHome farmer={farmer} />;
     title = TITLES.home;
   } else if (primary === "book") {
@@ -130,11 +142,11 @@ function App() {
   return (
     <AppShell
       workspace="farmer"
-      segments={segments}
+      segments={farmerSegments}
       title={title}
       onBack={showBack ? () => window.history.back() : undefined}
       onLogout={() => {
-        clearAuthSession();
+        clearAuthSession("farmer");
         clearStoredFarmer();
         setFarmer(null);
         navigate("/");

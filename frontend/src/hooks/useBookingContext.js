@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { loadBookingContext } from "../core/bookingContext";
 import { LIVE_REFRESH_INTERVAL_MS } from "../config";
 
@@ -18,22 +18,25 @@ const POLLABLE_STATUSES = new Set([
 
 export function useBookingContext(bookingId) {
   const [state, setState] = useState(INITIAL_STATE);
+  const requestIdRef = useRef(0);
 
   const load = useCallback(
     ({ silent = false } = {}) => {
       if (!bookingId) return;
+      const requestId = ++requestIdRef.current;
 
       loadBookingContext(bookingId)
-        .then((data) =>
+        .then((data) => {
+          if (requestId !== requestIdRef.current) return;
           setState({
             bookingId,
             status: "ready",
             data,
             error: null,
-          }),
-        )
+          });
+        })
         .catch((error) => {
-          if (silent) return;
+          if (silent || requestId !== requestIdRef.current) return;
 
           setState({
             bookingId,

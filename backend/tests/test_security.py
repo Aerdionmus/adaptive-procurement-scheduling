@@ -28,7 +28,7 @@ from app.core.security import TOKEN_TYPE
 from app.db.seed import seed_demo_data
 from app.db.session import get_db
 from app.main import app
-from app.models import Booking, Farmer, ProcurementCentre, QueueEntry
+from app.models import Booking, Farmer, ProcurementCentre, ProcurementSlot, QueueEntry
 from tests._auth_helpers import (
     auth_headers,
     create_admin,
@@ -655,6 +655,24 @@ async def test_farmer_can_register_and_log_in(
     )
     assert me_response.status_code == 200
     assert me_response.json()["email"] == "farmer3@example.test"
+    slot = db_session.scalar(
+        select(ProcurementSlot)
+        .where(ProcurementSlot.centre_id == centre(db_session).id)
+        .order_by(ProcurementSlot.id)
+    )
+    assert slot is not None
+    booking_response = await raw_client.post(
+        "/api/bookings/",
+        headers={"Authorization": "Bearer " + token},
+        json={
+            "farmer_id": f.id,
+            "centre_id": slot.centre_id,
+            "slot_id": slot.id,
+            "crop_type": "Paddy",
+            "quantity_kg": 100,
+        },
+    )
+    assert booking_response.status_code == 201, booking_response.text
 
 
 @pytest.mark.anyio

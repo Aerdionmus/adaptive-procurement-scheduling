@@ -35,10 +35,11 @@ export function AppShell({
   title,
   onBack,
   onLogout,
+  showNavigation = true,
   children,
 }) {
   const navItems = workspace === "staff" ? STAFF_NAV_ITEMS : FARMER_NAV_ITEMS;
-  const hasNavigation = workspace !== "portal";
+  const hasNavigation = workspace !== "portal" && showNavigation;
 
   return (
     <div className="app-shell">

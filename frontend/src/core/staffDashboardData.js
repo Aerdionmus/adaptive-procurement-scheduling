@@ -19,6 +19,7 @@ import {
   getCentreProcurementInsights,
   getLatestThroughput,
   getLiveQueue,
+  getSlot,
   listCentres,
 } from "../api/endpoints";
 
@@ -52,6 +53,7 @@ export async function loadStaffDashboard(centreId) {
   ]);
 
   const centre = centres.find((c) => c.id === centreId) ?? null;
+  const assessmentSlots = await loadAssessmentSlots(assessments);
 
   // "Currently serving" / "currently called" are not separate backend
   // fields - they're derived by reading queue_status off the live queue
@@ -81,12 +83,29 @@ export async function loadStaffDashboard(centreId) {
     currentlyServing,
     currentlyCalled,
     waitingCount,
-    assessments,
+    assessments: assessments.map((assessment) => ({
+      ...assessment,
+      slot: assessmentSlots.get(assessment.slot_id) ?? null,
+    })),
     statusCounts,
     affectedBookings,
     throughput,
     insights,
   };
+}
+
+async function loadAssessmentSlots(assessments) {
+  const slotIds = [...new Set(assessments.map((assessment) => assessment.slot_id))];
+  const results = await Promise.all(
+    slotIds.map(async (slotId) => {
+      try {
+        return [slotId, await getSlot(slotId)];
+      } catch {
+        return [slotId, null];
+      }
+    }),
+  );
+  return new Map(results);
 }
 
 async function loadThroughput(centreId) {
