@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import date, timedelta, time
 from pathlib import Path
 
 import pytest
@@ -17,6 +17,7 @@ from app.models import (
     ProcurementCentre,
     ProcurementSlot,
     QueueEntry,
+    QueueStatus,
     ThroughputSnapshot,
     User,
     UserRole,
@@ -163,3 +164,83 @@ def test_seed_is_idempotent_for_a_fixed_reference_date(db_session: Session) -> N
     second = seed_demo_data(db_session, today=fixed_today)
 
     assert first == second == EXPECTED_COUNTS
+
+
+def test_seed_is_idempotent_across_different_reference_dates(db_session: Session) -> None:
+    first = seed_demo_data(db_session, today=date(2027, 6, 1))
+    second = seed_demo_data(db_session, today=date(2027, 6, 2))
+
+    assert first == second == EXPECTED_COUNTS
+    queue_tokens = [
+        (entry.centre_id, entry.token_number)
+        for entry in db_session.scalars(select(QueueEntry)).all()
+    ]
+    assert len(queue_tokens) == len(set(queue_tokens))
+
+
+def test_seed_preserves_existing_queue_token_owner(db_session: Session) -> None:
+    centre = ProcurementCentre(
+        name="Existing Centre",
+        code="TNJ-CENTRAL-01",
+        district="Test",
+        daily_capacity=10,
+    )
+    farmer = Farmer(name="Existing Farmer", phone="9111111111", village="Test")
+    db_session.add_all([centre, farmer])
+    db_session.flush()
+    slot = ProcurementSlot(
+        centre_id=centre.id,
+        slot_date=date(2027, 6, 1),
+        start_time=time(9, 0),
+        end_time=time(10, 0),
+        capacity=10,
+    )
+    booking = Booking(
+        farmer_id=farmer.id,
+        centre_id=centre.id,
+        slot=slot,
+        crop_type="Paddy",
+        quantity_kg=100,
+    )
+    db_session.add(booking)
+    db_session.flush()
+    existing_entry = QueueEntry(
+        centre_id=centre.id,
+        booking_id=booking.id,
+        token_number=101,
+        queue_status=QueueStatus.WAITING,
+    )
+    db_session.add(existing_entry)
+    db_session.commit()
+
+    seed_demo_data(db_session, today=date(2027, 6, 1))
+
+    preserved = db_session.get(QueueEntry, existing_entry.id)
+    assert preserved is not None
+    assert preserved.booking_id == booking.id
+    assert preserved.token_number == 101
+
+    demo_entry = db_session.scalar(
+        select(QueueEntry)
+        .join(Booking)
+        .join(ProcurementCentre)
+        .where(
+            Booking.crop_type == "Paddy",
+            Booking.quantity_kg == 1250,
+            ProcurementCentre.code == "TNJ-CENTRAL-01",
+        )
+    )
+    assert demo_entry is not None
+    assert demo_entry.booking_id != booking.id
+    assert demo_entry.token_number != 101
+
+
+def test_seed_repeated_runs_leave_no_duplicate_queue_tokens(db_session: Session) -> None:
+    seed_demo_data(db_session, today=date(2027, 6, 1))
+    seed_demo_data(db_session, today=date(2027, 6, 2))
+    seed_demo_data(db_session, today=date(2027, 6, 3))
+
+    rows = db_session.execute(
+        select(QueueEntry.centre_id, QueueEntry.token_number)
+    ).all()
+    assert len(rows) == len(set(rows))

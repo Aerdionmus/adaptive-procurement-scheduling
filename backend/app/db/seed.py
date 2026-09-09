@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
 from typing import Any
@@ -23,6 +24,8 @@ from app.models import (
     User,
     UserRole,
 )
+
+logger = logging.getLogger(__name__)
 
 
 DEMO_CENTRES = (
@@ -209,47 +212,77 @@ def seed_demo_data(session: Session, today: date | None = None) -> dict[str, int
             farmers[farmer_data["phone"]] = farmer
         session.flush()
 
+        existing_demo_bookings: dict[str, Booking] = {}
+        for booking_data in DEMO_BOOKINGS:
+            farmer = farmers[booking_data["phone"]]
+            centre = centres[booking_data["centre_code"]]
+            existing_demo_bookings[booking_data["phone"]] = session.scalar(
+                select(Booking).where(
+                    Booking.farmer_id == farmer.id,
+                    Booking.centre_id == centre.id,
+                    Booking.crop_type == booking_data["crop_type"],
+                    Booking.quantity_kg == booking_data["quantity_kg"],
+                )
+            )
+
+        # On a fresh database retain the original complete 18-slot demo
+        # dataset. Once any demo booking exists, only create slots needed for
+        # still-missing demo bookings; existing bookings remain attached to
+        # their original slots when the rolling seed date changes.
         slots: dict[tuple[str, date, time], ProcurementSlot] = {}
-        for centre_code, centre in centres.items():
-            for slot_date in demo_dates:
-                for start_time, end_time in DEMO_TIME_WINDOWS:
-                    slot = session.scalar(
-                        select(ProcurementSlot).where(
-                            ProcurementSlot.centre_id == centre.id,
-                            ProcurementSlot.slot_date == slot_date,
-                            ProcurementSlot.start_time == start_time,
-                        )
-                    )
-                    if slot is None:
-                        slot = ProcurementSlot(
-                            centre_id=centre.id,
-                            slot_date=slot_date,
-                            start_time=start_time,
-                            end_time=end_time,
-                            capacity=20,
-                        )
-                        session.add(slot)
-                    slots[(centre_code, slot_date, start_time)] = slot
+        slot_specs = (
+            (
+                centre_code,
+                slot_date,
+                start_time,
+                end_time,
+            )
+            for centre_code, centre in centres.items()
+            for slot_date in demo_dates
+            for start_time, end_time in DEMO_TIME_WINDOWS
+            if not any(existing_demo_bookings.values())
+            or any(
+                existing_demo_bookings[booking_data["phone"]] is None
+                and booking_data["centre_code"] == centre_code
+                and demo_dates[booking_data["date_offset"]] == slot_date
+                and booking_data["start_time"] == start_time
+                for booking_data in DEMO_BOOKINGS
+            )
+        )
+        for centre_code, slot_date, start_time, end_time in slot_specs:
+            centre = centres[centre_code]
+            slot = session.scalar(
+                select(ProcurementSlot).where(
+                    ProcurementSlot.centre_id == centre.id,
+                    ProcurementSlot.slot_date == slot_date,
+                    ProcurementSlot.start_time == start_time,
+                )
+            )
+            if slot is None:
+                slot = ProcurementSlot(
+                    centre_id=centre.id,
+                    slot_date=slot_date,
+                    start_time=start_time,
+                    end_time=end_time,
+                    capacity=20,
+                )
+                session.add(slot)
+            slots[(centre_code, slot_date, start_time)] = slot
         session.flush()
 
         bookings: dict[str, Booking] = {}
         for booking_data in DEMO_BOOKINGS:
             farmer = farmers[booking_data["phone"]]
             centre = centres[booking_data["centre_code"]]
-            slot = slots[
-                (
-                    booking_data["centre_code"],
-                    demo_dates[booking_data["date_offset"]],
-                    booking_data["start_time"],
-                )
-            ]
-            booking = session.scalar(
-                select(Booking).where(
-                    Booking.farmer_id == farmer.id,
-                    Booking.slot_id == slot.id,
-                )
-            )
+            booking = existing_demo_bookings[booking_data["phone"]]
             if booking is None:
+                slot = slots[
+                    (
+                        booking_data["centre_code"],
+                        demo_dates[booking_data["date_offset"]],
+                        booking_data["start_time"],
+                    )
+                ]
                 booking = Booking(
                     farmer_id=farmer.id,
                     centre_id=centre.id,
@@ -267,20 +300,39 @@ def seed_demo_data(session: Session, today: date | None = None) -> dict[str, int
             ("9000000002", "TNJ-CENTRAL-01", 102, QueueStatus.CALLED),
             ("9000000004", "KUM-01", 201, QueueStatus.SERVING),
         )
+        occupied_tokens = {
+            (queue_entry.centre_id, queue_entry.token_number)
+            for queue_entry in session.scalars(select(QueueEntry)).all()
+        }
         for phone, centre_code, token_number, queue_status in queue_data:
             booking = bookings[phone]
             queue_entry = session.scalar(
                 select(QueueEntry).where(QueueEntry.booking_id == booking.id)
             )
             if queue_entry is None:
+                centre_id = centres[centre_code].id
+                requested_token = token_number
+                while (centre_id, token_number) in occupied_tokens:
+                    token_number += 1
+                if token_number != requested_token:
+                    logger.warning(
+                        "Seed queue token %s at centre %s is already in use; "
+                        "assigning token %s to demo booking %s without changing "
+                        "the existing queue entry",
+                        requested_token,
+                        centre_code,
+                        token_number,
+                        booking.id,
+                    )
                 session.add(
                     QueueEntry(
-                        centre_id=centres[centre_code].id,
+                        centre_id=centre_id,
                         booking_id=booking.id,
                         token_number=token_number,
                         queue_status=queue_status,
                     )
                 )
+                occupied_tokens.add((centre_id, token_number))
         session.flush()
 
         snapshot_data = (
