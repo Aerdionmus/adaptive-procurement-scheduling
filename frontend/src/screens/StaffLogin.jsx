@@ -22,12 +22,12 @@ export function StaffLogin({ onLoggedIn }) {
     setError(null);
     try {
       const { access_token: token } = await login({ email, password });
-      setAuthSession({ token, role: null, email, farmerId: null, centreId: null });
+      setAuthSession("staff", { token, role: null, email, farmerId: null, centreId: null });
       const user = await getCurrentUser();
       if (user.role !== "CENTRE_STAFF" && user.role !== "ADMIN") {
         throw new Error("Not a staff/admin account");
       }
-      setAuthSession({
+      setAuthSession("staff", {
         token,
         role: user.role,
         email: user.email,
@@ -36,7 +36,7 @@ export function StaffLogin({ onLoggedIn }) {
       });
       onLoggedIn(user);
     } catch {
-      clearAuthSession();
+      clearAuthSession("staff");
       setError("We couldn't log you in. Check your email and password and try again.");
     } finally {
       setSubmitting(false);

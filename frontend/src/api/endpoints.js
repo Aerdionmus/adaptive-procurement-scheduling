@@ -80,6 +80,10 @@ export function getLiveQueue(centreId) {
   return getJson(`/api/queue/centres/${centreId}`);
 }
 
+export function getBookingQueueEntry(bookingId) {
+  return getJson(`/api/queue/bookings/${bookingId}`);
+}
+
 export function getQueueEta(queueEntryId) {
   return getJson(`/api/queue/${queueEntryId}/eta`);
 }
@@ -94,6 +98,10 @@ export function getBookingSchedule(bookingId) {
 
 export function getCentreSchedule(centreId) {
   return getJson(`/api/scheduling/centres/${centreId}`);
+}
+
+export function getCentreProcurementInsights(centreId) {
+  return getJson(`/api/centres/${centreId}/procurement-insights`);
 }
 
 // ---- Staff: queue actions ------------------------------------------------

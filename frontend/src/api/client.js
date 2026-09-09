@@ -38,7 +38,11 @@ function authHeaders() {
 
 async function handleResponse(response) {
   if (!response.ok) {
-    if (response.status === 401) clearAuthSession();
+    if (response.status === 401) {
+      const hashPath = window.location.hash.replace(/^#/, "");
+      const path = hashPath || window.location.pathname;
+      clearAuthSession(path.split("/").filter(Boolean)[0] === "staff" ? "staff" : "farmer");
+    }
     throw new ApiError(await parseErrorDetail(response), response.status);
   }
   if (response.status === 204) return null;

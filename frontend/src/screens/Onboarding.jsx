@@ -32,7 +32,7 @@ export function Onboarding({ onDone }) {
     setForm((prev) => ({ ...prev, [field]: event.target.value }));
 
   function completeSession(user, token, farmer) {
-    setAuthSession({
+    setAuthSession("farmer", {
       token,
       role: user.role,
       email: user.email,
@@ -49,56 +49,33 @@ export function Onboarding({ onDone }) {
   setError(null);
 
   try {
-    console.log("1. Creating farmer...");
-
     const farmer = await createFarmer({
       name: form.name,
       phone: form.phone,
       village: form.village,
     });
 
-    console.log("2. Farmer created:", farmer);
-
-    console.log("3. Registering user...");
-
-    const registeredUser = await registerUser({
+    await registerUser({
       email: form.email,
       password: form.password,
       role: "FARMER",
       farmerId: farmer.id,
     });
 
-    console.log("4. User registered:", registeredUser);
-
-    console.log("5. Logging in...");
-
     const { access_token: token } = await login({
       email: form.email,
       password: form.password,
     });
 
-    console.log("6. Login successful, token received");
-
-    const user = {
-      role: "FARMER",
-      email: form.email,
-      farmer_id: farmer.id,
-      centre_id: null,
-    };
-
-    console.log("7. Completing session...");
+    setAuthSession("farmer", { token, role: "FARMER", email: form.email, farmerId: null, centreId: null });
+    const user = await getCurrentUser();
+    if (user.role !== "FARMER" || user.farmer_id !== farmer.id) {
+      throw new Error("Registered account is not a farmer account");
+    }
 
     completeSession(user, token, farmer);
-
-    console.log("8. Signup complete!");
   } catch (error) {
-    console.error("========== SIGNUP FAILED ==========");
-    console.error(error);
-    console.error("Message:", error?.message);
-    console.error("Status:", error?.status);
-    console.error("Stack:", error?.stack);
-
-    setError(error?.message || "Signup failed. Check the browser console.");
+    setError(error?.message || "Signup failed. Please try again.");
   } finally {
     setSubmitting(false);
   }
@@ -115,7 +92,7 @@ export function Onboarding({ onDone }) {
       });
       // getCurrentUser() reads the token via authHeaders(), which reads
       // straight from localStorage - store the session before calling it.
-      setAuthSession({ token, role: "FARMER", email: form.email, farmerId: null, centreId: null });
+      setAuthSession("farmer", { token, role: "FARMER", email: form.email, farmerId: null, centreId: null });
       const user = await getCurrentUser();
       if (user.role !== "FARMER" || !user.farmer_id) {
         throw new Error("Not a farmer account");
@@ -123,10 +100,9 @@ export function Onboarding({ onDone }) {
       const farmer = await getFarmer(user.farmer_id);
       completeSession(user, token, farmer);
    } catch (error) {
-  console.error("LOGIN ERROR:", error);
-  clearAuthSession();
-  setError(error?.message || "Login failed. Check the browser console.");
-} finally {
+     clearAuthSession("farmer");
+     setError(error?.message || "Login failed. Please try again.");
+   } finally {
       setSubmitting(false);
     }
   }

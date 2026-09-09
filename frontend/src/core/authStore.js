@@ -11,7 +11,10 @@
 // core/storage.js's existing farmer/booking-id persistence) rather than a
 // new state-management dependency.
 
-const AUTH_KEY = "aps.auth";
+const AUTH_KEYS = {
+  farmer: "aps.auth.farmer",
+  staff: "aps.auth.staff",
+};
 
 /**
  * @typedef {Object} AuthSession
@@ -22,25 +25,31 @@ const AUTH_KEY = "aps.auth";
  * @property {number|null} centreId
  */
 
-/** @returns {AuthSession|null} */
-export function getAuthSession() {
+/** @param {"farmer"|"staff"} portal */
+export function getAuthSession(portal) {
+  const key = AUTH_KEYS[portal];
+  if (!key) return null;
   try {
-    const raw = window.localStorage.getItem(AUTH_KEY);
+    const raw = window.localStorage.getItem(key);
     return raw ? JSON.parse(raw) : null;
   } catch {
     return null;
   }
 }
 
-/** @param {AuthSession} session */
-export function setAuthSession(session) {
-  window.localStorage.setItem(AUTH_KEY, JSON.stringify(session));
+/** @param {"farmer"|"staff"} portal @param {AuthSession} session */
+export function setAuthSession(portal, session) {
+  window.localStorage.setItem(AUTH_KEYS[portal], JSON.stringify(session));
 }
 
-export function clearAuthSession() {
-  window.localStorage.removeItem(AUTH_KEY);
+/** @param {"farmer"|"staff"} portal */
+export function clearAuthSession(portal) {
+  window.localStorage.removeItem(AUTH_KEYS[portal]);
 }
 
 export function getAuthToken() {
-  return getAuthSession()?.token ?? null;
+  const hashPath = window.location.hash.replace(/^#/, "");
+  const path = hashPath || window.location.pathname;
+  const portal = path.split("/").filter(Boolean)[0] === "staff" ? "staff" : "farmer";
+  return getAuthSession(portal)?.token ?? null;
 }
