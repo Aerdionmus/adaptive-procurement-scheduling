@@ -16,6 +16,7 @@
 import { ApiError } from "../api/client";
 import {
   getCentreSchedule,
+  getCentreProcurementInsights,
   getLatestThroughput,
   getLiveQueue,
   listCentres,
@@ -42,11 +43,12 @@ export const SCHEDULING_STATES = ["ON_TRACK", "AT_RISK", "DELAYED"];
  * }>}
  */
 export async function loadStaffDashboard(centreId) {
-  const [centres, liveQueue, assessments, throughput] = await Promise.all([
+  const [centres, liveQueue, assessments, throughput, insights] = await Promise.all([
     listCentres(), // GET /api/centres/
     getLiveQueue(centreId), // GET /api/queue/centres/{id}
     getCentreSchedule(centreId), // GET /api/scheduling/centres/{id}
     loadThroughput(centreId), // GET /api/admin/throughput/{id}
+    getCentreProcurementInsights(centreId), // GET /api/centres/{id}/procurement-insights
   ]);
 
   const centre = centres.find((c) => c.id === centreId) ?? null;
@@ -83,6 +85,7 @@ export async function loadStaffDashboard(centreId) {
     statusCounts,
     affectedBookings,
     throughput,
+    insights,
   };
 }
 

@@ -8,6 +8,7 @@ import { CentreHealthPanel } from "../components/staff/CentreHealthPanel";
 import { CurrentlyServingPanel } from "../components/staff/CurrentlyServingPanel";
 import { LiveQueuePanel } from "../components/staff/LiveQueuePanel";
 import { SchedulingStatusSummary } from "../components/staff/SchedulingStatusSummary";
+import { ProcurementRecommendations } from "../components/staff/ProcurementRecommendations";
 import { IconLogOut } from "../components/icons";
 import { navigate } from "../core/router";
 import { useStaffDashboard } from "../hooks/useStaffDashboard";
@@ -130,6 +131,7 @@ function StaffDashboardContent({ data, onRefresh }) {
           pendingBookingsCount={data.assessments.length}
           onThroughputRecalculated={onRefresh}
         />
+        <ProcurementRecommendations recommendations={data.insights.recommendations} />
         <CurrentlyServingPanel
           centreId={data.centre?.id}
           currentlyServing={data.currentlyServing}

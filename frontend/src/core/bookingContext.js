@@ -11,7 +11,13 @@
 // GET /api/bookings/{id}/queue-entry pair would simplify. Flagged in the
 // final report rather than changed here, since backend changes are out of
 // scope for this workstream.
-import { getBooking, getLiveQueue, getQueueEta, getSlot, listCentres } from "../api/endpoints";
+import {
+  getBooking,
+  getBookingQueueEntry,
+  getQueueEta,
+  getSlot,
+  listCentres,
+} from "../api/endpoints";
 
 const LIVE_QUEUE_BOOKING_STATUSES = new Set(["CHECKED_IN", "IN_QUEUE", "PROCESSING"]);
 
@@ -38,8 +44,7 @@ export async function loadBookingContext(bookingId) {
   let eta = null;
   if (centre && LIVE_QUEUE_BOOKING_STATUSES.has(booking.status)) {
     try {
-      const liveQueue = await getLiveQueue(centre.id);
-      queueEntry = liveQueue.find((entry) => entry.booking_id === booking.id) ?? null;
+      queueEntry = await getBookingQueueEntry(booking.id);
       if (queueEntry) {
         eta = await getQueueEta(queueEntry.id).catch(() => null);
         if (eta) {
