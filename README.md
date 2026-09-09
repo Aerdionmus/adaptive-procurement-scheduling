@@ -98,6 +98,85 @@ through the onboarding screen to exercise the real registration flow
 end-to-end. These are demo-only credentials for a locally seeded
 database; never reuse them in a real deployment.
 
+## Data provenance: reference/external agricultural data
+
+The scheduling engine (queue, throughput, ETA, ON_TRACK/AT_RISK/DELAYED)
+runs entirely on real, application-generated operational data - actual
+bookings, check-ins, and served timestamps. It does not use, and is not
+affected by, anything described in this section.
+
+Separately, the `reference_datasets` table holds external/official
+statistical context (e.g. district/season agricultural statistics,
+AGMARKNET-style market price observations). Every row is tagged with a
+`data_status`:
+
+| `data_status` | Meaning |
+| --- | --- |
+| `REAL`       | Imported from an actual official source. `source`, `source_reference`, and `retrieved_at` are always populated. |
+| `DERIVED`    | Computed from REAL rows (not used yet - reserved for future calibration work). |
+| `SIMULATED`  | Synthetic data for load/stress testing. |
+| `DEMO`       | Placeholder data for demos/walkthroughs. |
+
+**This table currently contains no real government/farmer/DPC data.**
+There is no verified real-time TNCSC DPC procurement API and no verified
+public farmer-level DPC operational dataset this project can legitimately
+claim to have integrated. The AGMARKNET/data.gov.in market-price data and
+the Tamil Nadu Season & Crop Report are the identified candidate REAL
+sources; importing an actual REAL dataset is a manual, separate step
+(see below) - nothing in this codebase invents or assumes such data.
+
+### Reading reference data
+
+`GET /api/reference/` (any authenticated user) lists rows, filterable by
+`district`, `dataset_type`, and `metric_name`. `GET /api/reference/{id}`
+fetches a single row. There is no `POST`/`PUT`/`DELETE` for this
+resource - reference data can only enter the system through the import
+procedure below, never through an arbitrary API request.
+
+### Importing reference data (manual CSV import)
+
+```bash
+cd backend
+python -m app.db.import_reference_data <csv_path> \
+    --data-status REAL \
+    --source "Tamil Nadu Season and Crop Report 2024-25" \
+    --source-reference "https://<official-source-url-or-document-id>" \
+    --retrieved-at 2026-09-01
+```
+
+The CSV must have a header row with exactly these columns:
+`dataset_type, district, season_or_period, metric_name, metric_value, unit`.
+`data_status`, `source`, `source_reference`, and `retrieved_at` are
+supplied once as command-line flags for the whole file, not read from the
+CSV - a CSV is never assumed to be "automatically official" just because
+it parses. Importing with `--data-status REAL` fails immediately, before
+anything is written, unless `--source`, `--source-reference`, and
+`--retrieved-at` are all supplied.
+
+**Validation is all-or-nothing:** if any row in the CSV fails validation
+(missing column, non-numeric `metric_value`, etc.), the entire import is
+rejected and every problem found is printed - nothing is written. A
+malformed value is never silently coerced to a default. A completely
+blank row (e.g. a trailing spacer line some spreadsheet exports add) is
+tolerated and skipped; a row with only *some* fields blank is still
+treated as malformed and fails the batch.
+
+**Idempotency:** a row already in the table with the same
+`(dataset_type, district, season_or_period, metric_name, source)` is
+skipped, not re-inserted or overwritten. Re-running the same import
+command is therefore always safe. Importing a corrected figure for the
+same fact requires a new `--source`/`--source-reference` (a new
+provenance trail), not a silent overwrite of a previously-imported value.
+
+### Not yet built (by design, for this milestone)
+
+- No live AGMARKNET (or any) external API integration - only manual CSV
+  import. A live-fetch integration (`app/integrations/`) is a deliberately
+  separate, later milestone, gated on an optional API-key env var so its
+  absence never breaks the app.
+- Reference data is not wired into the scheduling/ETA engine. It is
+  contextual/reference information only, in this milestone.
+
 ## Deployment
 
 The intended architecture is frontend on Vercel, backend on Render, and
