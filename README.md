@@ -242,6 +242,12 @@ matching reference rows still returns the operational insight with an empty
 `season_or_period` query parameters apply the same explicit filters as the
 reference-context endpoint.
 
+The response also includes deterministic `recommendations`. Each recommendation
+has a stable code, title, explanation, supporting operational evidence,
+severity, and priority. Recommendations are derived only from the existing
+scheduling status, queue state, and throughput availability; they do not
+execute an operational action or change the authoritative scheduling engine.
+
 ## Deployment
 
 The intended architecture is frontend on Vercel, backend on Render, and

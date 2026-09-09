@@ -105,6 +105,7 @@ async def get_centre_procurement_insights(
         metrics=insight.metrics,
         reasons=insight.reasons,
         attention_items=insight.attention_items,
+        recommendations=insight.recommendations,
         booking_assessments=insight.booking_assessments,
         reference_context=insight.reference_context.reference_facts,
         calculated_at=insight.calculated_at,

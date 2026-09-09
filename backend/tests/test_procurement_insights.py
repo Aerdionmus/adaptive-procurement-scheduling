@@ -17,7 +17,9 @@ from app.db.session import get_db
 from app.main import app
 from app.models import ProcurementCentre, ThroughputSnapshot
 from app.repositories import reference as reference_repository
-from tests._auth_helpers import auth_headers, create_admin
+from app.services import procurement_insights as insights_service
+from app.services.scheduling import SchedulingStatus
+from tests._auth_helpers import auth_headers, create_admin, create_staff_user
 
 
 @pytest.fixture(autouse=True)
@@ -87,6 +89,10 @@ async def test_insight_returns_operational_snapshot_without_reference_data(
     assert body["metrics"]["active_booking_count"] == 3
     assert body["reference_context"] == []
     assert body["reasons"]
+    assert body["recommendations"]
+    assert body["recommendations"] == sorted(
+        body["recommendations"], key=lambda item: item["priority"]
+    )
 
 
 @pytest.mark.anyio
@@ -126,6 +132,89 @@ async def test_insight_unknown_centre_returns_404(client: AsyncClient) -> None:
     response = await client.get("/api/centres/999999/procurement-insights")
 
     assert response.status_code == 404
+
+
+@pytest.mark.anyio
+async def test_insight_inactive_centre_returns_409(
+    client: AsyncClient,
+    db_session: Session,
+) -> None:
+    target = centre(db_session)
+    target.active = False
+    db_session.commit()
+
+    response = await client.get(f"/api/centres/{target.id}/procurement-insights")
+
+    assert response.status_code == 409
+
+
+@pytest.mark.anyio
+async def test_insight_rejects_staff_from_another_centre(
+    db_session: Session,
+) -> None:
+    async def override_get_db():
+        yield db_session
+
+    app.dependency_overrides[get_db] = override_get_db
+    first = centre(db_session)
+    other = db_session.scalar(
+        select(ProcurementCentre).where(ProcurementCentre.code == "KUM-01")
+    )
+    assert other is not None
+    staff = create_staff_user(db_session, other)
+    try:
+        async with AsyncClient(
+            transport=ASGITransport(app=app),
+            base_url="http://testserver",
+            headers=auth_headers(staff),
+        ) as staff_client:
+            response = await staff_client.get(
+                f"/api/centres/{first.id}/procurement-insights"
+            )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 403
+
+
+def test_recommendations_are_deterministic_and_evidence_based() -> None:
+    delayed = type("Assessment", (), {"scheduling_status": SchedulingStatus.DELAYED})()
+    at_risk = type("Assessment", (), {"scheduling_status": SchedulingStatus.AT_RISK})()
+
+    first = insights_service._build_recommendations(
+        [delayed, at_risk],
+        queue_depth=2,
+        current_serving_token=None,
+        has_throughput=False,
+    )
+    second = insights_service._build_recommendations(
+        [delayed, at_risk],
+        queue_depth=2,
+        current_serving_token=None,
+        has_throughput=False,
+    )
+
+    assert first == second
+    assert [recommendation.code for recommendation in first] == [
+        "REVIEW_DELAYED_BOOKINGS",
+        "MONITOR_AT_RISK_BOOKINGS",
+        "START_QUEUE_SERVICE",
+        "CAPTURE_THROUGHPUT_DATA",
+    ]
+    assert all(recommendation.evidence for recommendation in first)
+
+
+def test_empty_centre_recommends_no_action() -> None:
+    recommendations = insights_service._build_recommendations(
+        [],
+        queue_depth=0,
+        current_serving_token=None,
+        has_throughput=False,
+    )
+
+    assert [recommendation.code for recommendation in recommendations] == [
+        "NO_ACTION_REQUIRED"
+    ]
 
 
 def test_reference_context_cannot_change_operational_inputs(db_session: Session) -> None:

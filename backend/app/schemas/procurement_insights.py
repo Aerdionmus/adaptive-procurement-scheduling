@@ -27,6 +27,17 @@ class AttentionItemResponse(BaseModel):
     evidence: list[str]
 
 
+class OperationalRecommendationResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    code: str
+    title: str
+    explanation: str
+    evidence: list[str]
+    severity: str
+    priority: int
+
+
 class ProcurementInsightResponse(BaseModel):
     centre_id: int
     centre_name: str
@@ -36,6 +47,7 @@ class ProcurementInsightResponse(BaseModel):
     metrics: OperationalMetricsResponse
     reasons: list[str]
     attention_items: list[AttentionItemResponse]
+    recommendations: list[OperationalRecommendationResponse]
     booking_assessments: list[SchedulingAssessmentResponse]
     reference_context: list[ReferenceContextResponse]
     calculated_at: datetime
