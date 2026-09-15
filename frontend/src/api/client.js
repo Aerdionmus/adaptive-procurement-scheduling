@@ -51,6 +51,7 @@ async function handleResponse(response) {
 
 export async function getJson(path) {
   const response = await fetch(`${API_BASE_URL}${path}`, {
+    cache: "no-store",
     headers: { ...authHeaders() },
   });
   return handleResponse(response);

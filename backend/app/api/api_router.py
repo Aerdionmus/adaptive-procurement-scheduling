@@ -10,6 +10,7 @@ from app.api.routers import (
     queue,
     reference,
     scheduling,
+    simulation,
     slots,
     system,
 )
@@ -34,3 +35,4 @@ api_router.include_router(
 )
 api_router.include_router(admin.router, prefix="/admin", tags=["admin"])
 api_router.include_router(reference.router, prefix="/reference", tags=["reference"])
+api_router.include_router(simulation.router, prefix="/simulation", tags=["simulation"])

@@ -132,3 +132,35 @@ export function getLatestThroughput(centreId) {
 export function recalculateThroughput(centreId) {
   return postJson(`/api/admin/throughput/${centreId}/recalculate`, {});
 }
+
+// ---- Staff: deterministic Phase 1 simulation ----------------------------
+
+export function createSimulationRun({
+  centreId,
+  scenario = "adaptive_stress",
+  seed = 1,
+  horizonMinutes = 240,
+  resourceCount = 2,
+  observationDelayMinutes = 0,
+} = {}) {
+  return postJson("/api/simulation/runs", {
+    centre_id: centreId,
+    scenario,
+    seed,
+    horizon_minutes: horizonMinutes,
+    resource_count: resourceCount,
+    observation_delay_minutes: observationDelayMinutes,
+  });
+}
+
+export function getSimulationRun(runId) {
+  return getJson(`/api/simulation/runs/${runId}`);
+}
+
+export function getSimulationMetrics(runId) {
+  return getJson(`/api/simulation/runs/${runId}/metrics`);
+}
+
+export function getSimulationTrace(runId) {
+  return getJson(`/api/simulation/runs/${runId}/trace`);
+}

@@ -1097,6 +1097,50 @@ async def test_login_with_wrong_password_is_rejected(
 
 
 @pytest.mark.anyio
+async def test_simulation_runs_are_scoped_to_the_staff_centre(
+    raw_client: AsyncClient, db_session: Session
+) -> None:
+    home = centre(db_session, "KUM-01")
+    other = centre(db_session, "TNJ-CENTRAL-01")
+    home_staff = create_staff_user(db_session, home, email="simulation-home@example.test")
+    other_staff = create_staff_user(db_session, other, email="simulation-other@example.test")
+    admin = create_admin(db_session, email="simulation-admin@example.test")
+
+    create_response = await raw_client.post(
+        "/api/simulation/runs",
+        json={"centre_id": home.id, "seed": 9, "horizon_minutes": 30},
+        headers=auth_headers(home_staff),
+    )
+    assert create_response.status_code == 200, create_response.text
+    run_id = create_response.json()["run_id"]
+
+    own_response = await raw_client.get(
+        f"/api/simulation/runs/{run_id}", headers=auth_headers(home_staff)
+    )
+    assert own_response.status_code == 200
+    assert own_response.json()["centre_id"] == home.id
+
+    for suffix in ("metrics", "trace"):
+        own_subresource = await raw_client.get(
+            f"/api/simulation/runs/{run_id}/{suffix}",
+            headers=auth_headers(home_staff),
+        )
+        assert own_subresource.status_code == 200
+
+    for suffix in ("", "/metrics", "/trace"):
+        other_response = await raw_client.get(
+            f"/api/simulation/runs/{run_id}{suffix}",
+            headers=auth_headers(other_staff),
+        )
+        assert other_response.status_code == 403
+
+    admin_response = await raw_client.get(
+        f"/api/simulation/runs/{run_id}", headers=auth_headers(admin)
+    )
+    assert admin_response.status_code == 200
+
+
+@pytest.mark.anyio
 async def test_login_with_unknown_email_is_rejected(raw_client: AsyncClient) -> None:
     response = await raw_client.post(
         "/api/auth/login",

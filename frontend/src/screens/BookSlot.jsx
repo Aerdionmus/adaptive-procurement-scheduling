@@ -17,6 +17,7 @@ export function BookSlot({ farmer, params }) {
   const [slotId, setSlotId] = useState(params.slotId ? Number(params.slotId) : null);
 
   const [centres, setCentres] = useState({ status: "loading", data: [] });
+  const [centresRetryToken, setCentresRetryToken] = useState(0);
   const [slotsState, setSlotsState] = useState({ centreId: null, status: "idle", data: [] });
   const [slotsRetryToken, setSlotsRetryToken] = useState(0);
   const [submit, setSubmit] = useState({ status: "idle", error: null });
@@ -25,7 +26,7 @@ export function BookSlot({ farmer, params }) {
     listCentres()
       .then((data) => setCentres({ status: "ready", data }))
       .catch(() => setCentres({ status: "error", data: [] }));
-  }, []);
+  }, [centresRetryToken]);
 
   useEffect(() => {
     if (!centreId) return undefined;
@@ -119,7 +120,12 @@ export function BookSlot({ farmer, params }) {
           <h2>Choose a procurement centre</h2>
           {centres.status === "loading" && <LoadingState label="Loading centres\u2026" />}
           {centres.status === "error" && (
-            <ErrorState onRetry={() => setCentres({ status: "loading", data: [] })} />
+            <ErrorState
+              onRetry={() => {
+                setCentres({ status: "loading", data: [] });
+                setCentresRetryToken((token) => token + 1);
+              }}
+            />
           )}
           {centres.status === "ready" && centres.data.length === 0 && (
             <EmptyState message="No procurement centres are available right now." />
