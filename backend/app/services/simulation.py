@@ -97,6 +97,7 @@ class SimulationEngine:
 
     def __init__(self, request: SimulationRunRequest):
         self.request = request
+        self.centre_key = f"centre-{request.centre_id}"
         self.start = request.start_time or (
             datetime(2026, 1, 1, 9, 0, tzinfo=timezone.utc)
             if request.scenario == "adaptive_stress"
@@ -319,7 +320,7 @@ class SimulationEngine:
                 }
                 for key, resource in self.state.resources.items()
             },
-            "centre_status": {"centre-1": "OPEN" if self.state.centre_open else "OUTAGE"},
+            "centre_status": {self.centre_key: "OPEN" if self.state.centre_open else "OUTAGE"},
             "completed_work": len(self.state.completed),
             "completed_quantity_kg": str(
                 sum((work.quantity_kg for work in self.state.completed), Decimal(0))
@@ -545,7 +546,7 @@ class SimulationEngine:
         }
         earliest = max(stage_bounds.values(), default=0)
         age = observed.get("data_age_minutes", 0)
-        outage_penalty = 20 if observed.get("centre_status", {}).get("centre-1") != "OPEN" else sum(
+        outage_penalty = 20 if observed.get("centre_status", {}).get(self.centre_key) != "OPEN" else sum(
             10
             for resource in observed.get("active_resources", {}).values()
             if not resource["available"]
@@ -581,7 +582,7 @@ class SimulationEngine:
             classify_completion(estimated_completion, slot_end),
             same_centre_slot=(
                 _ObservedSlotContext(0, self.request.centre_id)
-                if self._observed.get("centre_status", {}).get("centre-1") == "OPEN"
+                if self._observed.get("centre_status", {}).get(self.centre_key) == "OPEN"
                 and not any(
                     not resource["available"]
                     and resource["resource_type"] == "weighment"
@@ -591,7 +592,7 @@ class SimulationEngine:
             ),
             alternate_centre_slot=(
                 _ObservedSlotContext(0, self.request.centre_id + 1)
-                if self._observed.get("centre_status", {}).get("centre-1") != "OPEN"
+                if self._observed.get("centre_status", {}).get(self.centre_key) != "OPEN"
                 else None
             ),
         )
@@ -639,7 +640,7 @@ class SimulationEngine:
             self.trace.append(dict(common, action=action, reason=reason))
         phase = (
             "OUTAGE"
-            if self._observed.get("centre_status", {}).get("centre-1") != "OPEN"
+            if self._observed.get("centre_status", {}).get(self.centre_key) != "OPEN"
             else "QUALITY_DELAY"
             if any(
                 not resource["available"] and resource["resource_type"] == "quality"

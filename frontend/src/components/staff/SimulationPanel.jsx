@@ -5,16 +5,6 @@ import { SCHEDULE_STATE_LABELS } from "../../core/statusLabels";
 import { StatusBadge } from "../StatusBadge";
 import { SCHEDULE_STATE_TONE } from "../statusTone";
 
-const STAGE_LABELS = {
-  NORMAL: "Normal",
-  ARRIVAL_SURGE: "Arrival surge",
-  SURGE: "Arrival surge",
-  QUALITY_DELAY: "Quality delay",
-  OUTAGE: "Outage",
-  STALE: "Stale observation",
-  RECOVERY: "Recovery",
-};
-
 export function SimulationPanel({ centreId }) {
   const [seed, setSeed] = useState(1);
   const [horizonMinutes, setHorizonMinutes] = useState(240);
@@ -102,23 +92,21 @@ export function SimulationPanel({ centreId }) {
       ) : (
         <>
           <div className="simulation-stage-list" aria-label="Simulation stages">
-            {(run.stages ?? run.scenario_phases ?? run.canonical_stages ?? []).map((stage, index) => (
-              <span className="simulation-stage" key={`${stage.phase ?? stage}-${index}`}>
-                {STAGE_LABELS[stage.phase ?? stage] ?? stage.phase ?? stage}
+            {run.stages.map((stage, index) => (
+              <span className="simulation-stage" key={`${stage.phase}-${index}`}>
+                {stage.phase}
               </span>
             ))}
           </div>
-          {run.current_stage && (
-            <p className="staff-panel__subtitle">
-              Current scenario stage: <strong>{STAGE_LABELS[run.current_stage] ?? run.current_stage}</strong>
-            </p>
-          )}
+          <p className="staff-panel__subtitle">
+            Scenario stages: <strong>{run.canonical_stage_sequence}</strong>
+          </p>
 
           <dl className="staff-stat-grid">
             <div className="staff-stat">
               <dt>Simulation clock</dt>
-              <dd>{run.simulation_clock ?? run.end_time ?? "—"}</dd>
-              <p className="staff-stat__note">{run.scenario_name ?? "adaptive_stress"}</p>
+              <dd>{run.start_time}</dd>
+              <p className="staff-stat__note">{run.scenario}</p>
             </div>
             <div className="staff-stat">
               <dt>Observed queue</dt>
@@ -129,10 +117,7 @@ export function SimulationPanel({ centreId }) {
               <dt>Active servers</dt>
               <dd>{observed?.active_server_count ?? 0}</dd>
               <p className="staff-stat__note">
-                {observed?.centre_status?.[String(centreId)] ??
-                  observed?.centre_status?.[`centre-${centreId}`] ??
-                  observed?.centre_status?.centre ??
-                  "Unknown"}
+                {observed?.centre_status?.[`centre-${run.centre_id}`] ?? "Unknown"}
               </p>
             </div>
             <div className="staff-stat">
@@ -152,25 +137,25 @@ export function SimulationPanel({ centreId }) {
             <div>
               <h3>Stage queues</h3>
               <ul>
-                {Object.entries(observed?.stage_queues ?? {}).map(([stage, value]) => (
-                  <li key={stage}><strong>{stage}</strong>: {value?.work ?? value?.count ?? value}</li>
+                {Object.entries(observed.stage_queues).map(([stage, value]) => (
+                  <li key={stage}><strong>{stage}</strong>: {value.length} lots</li>
                 ))}
               </ul>
             </div>
             <div>
               <h3>Resources</h3>
               <ul>
-                {Object.entries(observed?.active_resources ?? observed?.resources ?? {}).map(([resource, value]) => (
-                  <li key={resource}><strong>{resource}</strong>: {typeof value === "object" ? (value.status ?? value.state ?? "available") : String(value)}</li>
+                {Object.entries(observed.active_resources).map(([resource, value]) => (
+                  <li key={resource}><strong>{resource}</strong>: {value.available ? (value.work_id ? "busy" : "available") : "outage"}</li>
                 ))}
               </ul>
             </div>
             <div>
               <h3>Canonical timeline</h3>
               <ol>
-                {(run.canonical_sequence ?? []).map((event, index) => (
+                {run.canonical_sequence.map((event, index) => (
                   <li key={`${event.at_minute ?? event.at}-${event.event_type}-${index}`}>
-                    {event.at ?? `${event.at_minute} min`} — {event.label ?? event.event_type}
+                    {event.at} — {event.event_type}
                   </li>
                 ))}
               </ol>
@@ -224,14 +209,14 @@ export function SimulationPanel({ centreId }) {
           <details className="simulation-trace">
             <summary>View decision trace</summary>
             <ol>
-              {(run.trace ?? [])
+              {run.trace
                 .filter((entry) => ["OBSERVE", "ESTIMATE", "ASSESS", "ADAPT"].includes(entry.action))
                 .map((entry, index) => (
                   <li key={`${entry.at}-${entry.action}-${index}`}>
                     <strong>{entry.action}</strong>
                     <span>
-                      {entry.observation_at ?? entry.observed_at ?? entry.at}; queue {entry.observed_queue},{" "}
-                      bottleneck {entry.bottleneck_stage ?? "—"}, servers {entry.active_server_count ?? entry.active_servers ?? 0},{" "}
+                      {entry.observed_at ?? entry.at}; queue {entry.observed_queue},{" "}
+                      bottleneck {entry.bottleneck_stage ?? "—"}, servers {entry.active_server_count ?? 0},{" "}
                       age {entry.data_age_minutes} min; {entry.assessment} → {entry.recommendation}
                     </span>
                   </li>
