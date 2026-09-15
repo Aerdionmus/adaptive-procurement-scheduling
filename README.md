@@ -1,11 +1,70 @@
-# adaptive-procurement-scheduling
-Adaptive procurement scheduling and real-time queue management platform designed to reduce farmer waiting time and uncertainty at procurement centres.
+# Adaptive Procurement Scheduling
+
+Adaptive procurement scheduling and real-time queue management platform for
+reducing farmer waiting time and uncertainty at agricultural procurement
+centres. The repository contains a FastAPI backend, a React/Vite frontend,
+PostgreSQL migrations, deterministic demo fixtures, and an explainable
+scheduling/insights layer.
+
+## What the application does
+
+- Lets farmers register, browse active procurement centres and available
+  slots, create bookings, check in, and track queue/ETA state.
+- Gives centre staff a centre-scoped operations dashboard for live queue
+  actions, throughput, booking assessments, and procurement insights.
+- Gives administrators global access to centre operations, user provisioning,
+  and throughput recalculation.
+- Classifies bookings as `ON_TRACK`, `AT_RISK`, or `DELAYED` using live queue
+  depth, measured service throughput, and the booking slot window.
+- Provides explainable recommendations such as `KEEP_SLOT`, `WARN_FARMER`,
+  `PROPOSE_NEW_SLOT`, and `RECOMMEND_ALTERNATE_CENTRE`.
+- Keeps external agricultural reference data separate from operational
+  scheduling inputs. Reference facts enrich centre views but never alter
+  queue ordering, ETA, throughput, or scheduling decisions.
 
 ## Project foundation (Phase 1)
 
 - Backend: FastAPI modular monolith scaffold in `backend/app/`
 - Frontend: React + Vite scaffold in `frontend/`
-- Configuration template: `.env.example`
+- Configuration templates: `backend/.env.example` and `frontend/.env.example`
+- Database migrations: `backend/alembic/`
+- Automated backend tests: `backend/tests/`
+
+## Architecture
+
+```text
+React/Vite frontend
+  farmer portal + staff operations portal
+             |
+             | JSON API + JWT bearer token
+             v
+FastAPI application
+  routers -> services -> repositories -> SQLAlchemy models
+             |
+             +--> PostgreSQL (operational and reference data)
+             +--> manual CSV reference-data import (CLI only)
+```
+
+The frontend uses a small hash-based router and stores the farmer profile and
+JWT session in browser `localStorage`. Live farmer and staff views poll the
+API; the application does not currently use WebSockets. The backend is a
+single deployable service and exposes OpenAPI documentation at `/docs` and
+`/redoc` when it is running.
+
+### Main source areas
+
+| Area | Purpose |
+| --- | --- |
+| `backend/app/api/routers/` | HTTP endpoints and authorization boundaries |
+| `backend/app/services/` | Booking, queue, ETA, throughput, scheduling, and insight logic |
+| `backend/app/repositories/` | Database access |
+| `backend/app/models/` and `backend/app/schemas/` | SQLAlchemy persistence models and Pydantic API contracts |
+| `backend/app/db/seed.py` | Idempotent local demo data and demo users |
+| `backend/app/db/scenarios.py` | Dev-only scheduling state transitions |
+| `backend/app/db/import_reference_data.py` | Provenance-aware offline CSV importer |
+| `frontend/src/screens/` | Farmer and staff workflows |
+| `frontend/src/core/` | Routing, auth/session storage, API-facing state, and scheduling adapters |
+| `frontend/src/components/` | Shared UI and staff dashboard components |
 
 ## Authentication & authorization (Phase 4 - production hardening)
 
@@ -97,6 +156,72 @@ There is deliberately no seeded farmer login - sign up as a new farmer
 through the onboarding screen to exercise the real registration flow
 end-to-end. These are demo-only credentials for a locally seeded
 database; never reuse them in a real deployment.
+
+## API overview
+
+All application resources are under `/api`. Use the generated OpenAPI
+documentation (`http://127.0.0.1:8000/docs`) for request and response
+schemas.
+
+| Resource | Endpoints | Access |
+| --- | --- | --- |
+| System | `GET /api/test`, `GET /health`, `GET /` | Public |
+| Authentication | `POST /api/auth/register`, `POST /api/auth/login`, `GET /api/auth/me` | Register is public for farmers; login is public; `me` requires a bearer token |
+| Farmers | `POST /api/farmers/`, `GET /api/farmers/{farmer_id}` | Create is public; lookup is owner/admin scoped |
+| Centres and slots | `GET /api/centres/`, `GET /api/centres/{centre_id}/slots`, `GET /api/slots/{slot_id}` | Public |
+| Bookings | `POST /api/bookings/`, `GET /api/bookings/{booking_id}` | Authenticated; farmer ownership/admin rules apply |
+| Queue and ETA | `POST /api/queue/check-in`, queue lookup/actions, `GET /api/queue/{queue_entry_id}/eta` | Farmer ownership or centre-staff/admin scope |
+| Scheduling | `GET /api/scheduling/bookings/{booking_id}`, `GET /api/scheduling/centres/{centre_id}` | Booking owner or centre-staff/admin scope |
+| Centre context | `GET /api/centres/{centre_id}/reference-context` | Public, read-only context |
+| Centre insights | `GET /api/centres/{centre_id}/procurement-insights` | Centre staff for their centre or admin |
+| Reference data | `GET /api/reference/`, `GET /api/reference/{reference_id}` | Authenticated read-only access |
+| Administration | `POST /api/admin/users`, throughput read/recalculate endpoints | Admin, with centre scoping for staff reads |
+
+Queue actions are `call-next`, `start-serving`, `complete`, and `no-show`.
+Notifications currently expose only a foundation placeholder endpoint; no
+external SMS, IVR, or push provider is integrated.
+
+## Running the adaptive scheduling demo
+
+After migrations and seeding, run the scenario fixture from `backend/`:
+
+```bash
+python -m app.db.scenarios normal
+python -m app.db.scenarios at_risk
+python -m app.db.scenarios delayed
+python -m app.db.scenarios delayed_alt_centre
+python -m app.db.scenarios status
+python -m app.db.scenarios reset
+```
+
+Each command prints the relevant booking and centre IDs and the API URL to
+poll. The fixture is development-only, refuses to run with
+`APP_ENV=production`, and only changes rows belonging to its dedicated demo
+fixture.
+
+### Phase 1 deterministic adaptive simulation
+
+Centre staff and admins can run the isolated simulation through
+`POST /api/simulation/runs` with a `centre_id`. It uses synthetic in-memory
+state and never creates or changes bookings, queue entries, or throughput
+rows. A fixed `seed` reproduces the same event sequence and decision trace.
+Runs are centre-owned: staff can only read runs for their assigned centre,
+while admins can read any centre. The focused
+`GET /api/simulation/runs/{run_id}/metrics` and
+`GET /api/simulation/runs/{run_id}/trace` endpoints expose the corresponding
+parts of the full response.
+
+The event-driven response separates true state from the latest timestamped
+(optionally delayed) observation and includes the five processing stages, stage-specific resources,
+resource outages/recovery, queue work, service time, quantities, centre status,
+completed work, observation age, a richer completion interval, and
+baseline/adaptive metrics. The trace records `OBSERVE -> ESTIMATE -> ASSESS ->
+ADAPT` decisions. High uncertainty is reported as an interval rather than an
+exact ETA.
+
+The staff dashboard's **Adaptive simulation** panel lets staff vary the seed,
+horizon, and observation delay. These values are controlled synthetic
+assumptions, not ML predictions or real centre telemetry.
 
 ## Data provenance: reference/external agricultural data
 

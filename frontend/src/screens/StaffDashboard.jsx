@@ -10,6 +10,7 @@ import { LiveQueuePanel } from "../components/staff/LiveQueuePanel";
 import { SchedulingStatusSummary } from "../components/staff/SchedulingStatusSummary";
 import { ScheduledBookingsTable } from "../components/staff/ScheduledBookingsTable";
 import { ProcurementRecommendations } from "../components/staff/ProcurementRecommendations";
+import { SimulationPanel } from "../components/staff/SimulationPanel";
 import { IconLogOut } from "../components/icons";
 import { navigate } from "../core/router";
 import { useStaffDashboard } from "../hooks/useStaffDashboard";
@@ -60,12 +61,13 @@ function StaffDashboardAuthenticated({ session, params, onLogout }) {
     : session.centreId;
 
   const [centresState, setCentresState] = useState({ status: "loading", data: [] });
+  const [centresRetryToken, setCentresRetryToken] = useState(0);
 
   useEffect(() => {
     listCentres()
       .then((data) => setCentresState({ status: "ready", data }))
       .catch(() => setCentresState({ status: "error", data: [] }));
-  }, []);
+  }, [centresRetryToken]);
 
   const { status, data, reload } = useStaffDashboard(centreId);
 
@@ -90,7 +92,13 @@ function StaffDashboardAuthenticated({ session, params, onLogout }) {
           <h2 className="screen__section-title">Procurement centre</h2>
           {centresState.status === "loading" && <LoadingState label="Loading centres\u2026" />}
           {centresState.status === "error" && (
-            <ErrorState message="We couldn't load the centre list. Please try again." />
+            <ErrorState
+              message="We couldn't load the centre list. Please try again."
+              onRetry={() => {
+                setCentresState({ status: "loading", data: [] });
+                setCentresRetryToken((token) => token + 1);
+              }}
+            />
           )}
           {centresState.status === "ready" && (
             <CentreSelector
@@ -125,6 +133,7 @@ function StaffDashboardContent({ data, onRefresh }) {
   return (
     <div className="staff-dashboard">
       <div className="staff-dashboard__col">
+        <SimulationPanel centreId={data.centre?.id} />
         <CentreHealthPanel
           centre={data.centre}
           throughput={data.throughput}

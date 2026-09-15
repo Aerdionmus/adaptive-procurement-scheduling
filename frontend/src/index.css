@@ -1590,6 +1590,134 @@ button {
   color: var(--color-text-soft);
 }
 
+.simulation-controls {
+  display: flex;
+  align-items: end;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.simulation-controls label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--color-text-soft);
+}
+
+.simulation-controls input {
+  width: 78px;
+  padding: 7px 8px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  color: var(--color-text);
+  background: var(--color-surface);
+}
+
+.simulation-stage-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+
+.simulation-stage {
+  padding: 4px 7px;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  font-size: 0.72rem;
+  color: var(--color-text-soft);
+}
+
+.simulation-detail-grid,
+.simulation-metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.simulation-detail-grid > div,
+.simulation-metrics > div {
+  padding: 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+}
+
+.simulation-detail-grid h3 {
+  margin: 0 0 6px;
+  font-size: 0.82rem;
+}
+
+.simulation-detail-grid ul,
+.simulation-detail-grid ol {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 0.76rem;
+  color: var(--color-text-soft);
+}
+
+.simulation-metrics > div {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 0.75rem;
+}
+
+.simulation-metrics strong {
+  text-transform: capitalize;
+}
+
+.simulation-decision {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--color-border);
+}
+
+.simulation-decision__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.simulation-decision p {
+  margin-top: 8px;
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+.simulation-trace {
+  margin-top: 14px;
+  border-top: 1px solid var(--color-border);
+  padding-top: 10px;
+  font-size: 0.8rem;
+}
+
+.simulation-trace summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.simulation-trace ol {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  margin: 10px 0 0;
+  padding-left: 20px;
+}
+
+.simulation-trace li {
+  padding-left: 2px;
+}
+
+.simulation-trace li span {
+  display: block;
+  margin-top: 2px;
+  color: var(--color-text-soft);
+}
+
 /* ---- Currently serving --------------------------------------------------- */
 .staff-serving {
   display: flex;

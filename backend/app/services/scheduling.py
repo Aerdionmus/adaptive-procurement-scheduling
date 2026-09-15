@@ -40,6 +40,56 @@ class SchedulingRecommendation(str, enum.Enum):
     RECOMMEND_ALTERNATE_CENTRE = "RECOMMEND_ALTERNATE_CENTRE"
 
 
+def classify_completion(
+    estimated_completion_time: datetime,
+    slot_end_time: datetime,
+    *,
+    booking_status: BookingStatus | None = None,
+) -> SchedulingStatus:
+    """Apply the production scheduler's deterministic overrun policy.
+
+    The simulation uses this shared policy helper with synthetic observations;
+    normal booking assessments continue through ``_assess`` unchanged.
+    """
+    if booking_status == BookingStatus.MISSED:
+        return SchedulingStatus.DELAYED
+
+    overrun_minutes = Decimal(
+        (estimated_completion_time - slot_end_time).total_seconds()
+    ) / Decimal(60)
+    if overrun_minutes <= AT_RISK_THRESHOLD_MINUTES:
+        return SchedulingStatus.ON_TRACK
+    if overrun_minutes <= DELAYED_THRESHOLD_MINUTES:
+        return SchedulingStatus.AT_RISK
+    return SchedulingStatus.DELAYED
+
+
+def recommend_for_status(
+    scheduling_status: SchedulingStatus,
+    *,
+    same_centre_slot: ProcurementSlot | None = None,
+    alternate_centre_slot: ProcurementSlot | None = None,
+) -> tuple[SchedulingRecommendation, int | None, int | None]:
+    """Apply the canonical, side-effect-free recommendation policy."""
+    if scheduling_status == SchedulingStatus.ON_TRACK:
+        return SchedulingRecommendation.KEEP_SLOT, None, None
+    if scheduling_status == SchedulingStatus.AT_RISK:
+        return SchedulingRecommendation.WARN_FARMER, None, None
+    if same_centre_slot is not None:
+        return (
+            SchedulingRecommendation.PROPOSE_NEW_SLOT,
+            same_centre_slot.id,
+            same_centre_slot.centre_id,
+        )
+    if alternate_centre_slot is not None:
+        return (
+            SchedulingRecommendation.RECOMMEND_ALTERNATE_CENTRE,
+            alternate_centre_slot.id,
+            alternate_centre_slot.centre_id,
+        )
+    return SchedulingRecommendation.WARN_FARMER, None, None
+
+
 @dataclass
 class SchedulingError(Exception):
     detail: str
@@ -139,14 +189,11 @@ def _assess(session: Session, booking: Booking) -> SchedulingAssessment:
     # ADAPT: classify against the deterministic overrun thresholds. A
     # booking already recorded as MISSED is DELAYED regardless of what the
     # estimate says, since the farmer's slot has already been lost.
-    if booking.status == BookingStatus.MISSED:
-        scheduling_status = SchedulingStatus.DELAYED
-    elif overrun_minutes <= AT_RISK_THRESHOLD_MINUTES:
-        scheduling_status = SchedulingStatus.ON_TRACK
-    elif overrun_minutes <= DELAYED_THRESHOLD_MINUTES:
-        scheduling_status = SchedulingStatus.AT_RISK
-    else:
-        scheduling_status = SchedulingStatus.DELAYED
+    scheduling_status = classify_completion(
+        estimated_completion_time,
+        slot_end_time,
+        booking_status=booking.status,
+    )
 
     recommendation, recommended_slot_id, recommended_centre_id = _recommend(
         session,
@@ -335,31 +382,15 @@ def _recommend(
     scheduling_status: SchedulingStatus,
     now: datetime,
 ) -> tuple[SchedulingRecommendation, int | None, int | None]:
-    if scheduling_status == SchedulingStatus.ON_TRACK:
-        return SchedulingRecommendation.KEEP_SLOT, None, None
-
-    if scheduling_status == SchedulingStatus.AT_RISK:
-        return SchedulingRecommendation.WARN_FARMER, None, None
-
     # DELAYED: look for a read-only alternative before falling back to a
     # plain warning. Capacity is never mutated while evaluating these.
     same_centre_slot = _find_later_slot_same_centre(session, booking.centre_id, slot, now)
-    if same_centre_slot is not None:
-        return (
-            SchedulingRecommendation.PROPOSE_NEW_SLOT,
-            same_centre_slot.id,
-            same_centre_slot.centre_id,
-        )
-
     alternate_centre_slot = _find_alternate_centre_slot(session, booking.centre_id, now)
-    if alternate_centre_slot is not None:
-        return (
-            SchedulingRecommendation.RECOMMEND_ALTERNATE_CENTRE,
-            alternate_centre_slot.id,
-            alternate_centre_slot.centre_id,
-        )
-
-    return SchedulingRecommendation.WARN_FARMER, None, None
+    return recommend_for_status(
+        scheduling_status,
+        same_centre_slot=same_centre_slot,
+        alternate_centre_slot=alternate_centre_slot,
+    )
 
 
 def _find_later_slot_same_centre(
