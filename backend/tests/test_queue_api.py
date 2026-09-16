@@ -12,7 +12,16 @@ from sqlalchemy.orm import Session, sessionmaker
 from app.db.seed import seed_demo_data
 from app.db.session import get_db
 from app.main import app
-from app.models import Booking, BookingStatus, ProcurementCentre, QueueEntry, QueueStatus
+from app.models import (
+    Booking,
+    BookingStatus,
+    Farmer,
+    ProcurementCentre,
+    ProcurementSlot,
+    ProcurementTelemetry,
+    QueueEntry,
+    QueueStatus,
+)
 from tests._auth_helpers import auth_headers, create_admin
 
 
@@ -105,6 +114,107 @@ async def test_check_in_creates_waiting_queue_entry_and_syncs_booking(
     assert body["queue_status"] == "WAITING"
     db_session.refresh(booking)
     assert booking.status == BookingStatus.IN_QUEUE
+
+
+@pytest.mark.anyio
+async def test_booking_to_completion_records_one_real_telemetry_row(
+    client: AsyncClient,
+    db_session: Session,
+) -> None:
+    centre_record = centre(db_session)
+    farmer = db_session.scalar(select(Farmer).order_by(Farmer.id))
+    slot = db_session.scalar(
+        select(ProcurementSlot)
+        .where(
+            ProcurementSlot.centre_id == centre_record.id,
+            ProcurementSlot.capacity > 0,
+        )
+        .order_by(ProcurementSlot.id)
+    )
+    assert farmer is not None
+    assert slot is not None
+
+    booking_response = await client.post(
+        "/api/bookings/",
+        json={
+            "farmer_id": farmer.id,
+            "centre_id": centre_record.id,
+            "slot_id": slot.id,
+            "crop_type": "Paddy",
+            "quantity_kg": 500,
+        },
+    )
+    assert booking_response.status_code == 201, booking_response.text
+    booking_id = booking_response.json()["id"]
+
+    check_in_response = await client.post(
+        "/api/queue/check-in",
+        json={"booking_id": booking_id, "centre_id": centre_record.id},
+    )
+    assert check_in_response.status_code == 201, check_in_response.text
+    queue_entry_id = check_in_response.json()["id"]
+
+    telemetry_rows = list(
+        db_session.scalars(
+            select(ProcurementTelemetry).where(
+                ProcurementTelemetry.booking_id == booking_id
+            )
+        )
+    )
+    assert len(telemetry_rows) == 1
+    telemetry = telemetry_rows[0]
+    assert telemetry.centre_id == centre_record.id
+    assert telemetry.scheduled_slot == str(slot.id)
+    assert telemetry.arrival_time is not None
+    assert telemetry.queue_size_at_arrival == 0
+    assert telemetry.completion_status == "IN_PROGRESS"
+    assert telemetry.provenance == "REAL_OBSERVED"
+
+    await client.post(f"/api/queue/centres/{centre_record.id}/call-next")
+    serving_response = await client.post(
+        f"/api/queue/{queue_entry_id}/start-serving"
+    )
+    assert serving_response.status_code == 200, serving_response.text
+    completion_response = await client.post(
+        f"/api/queue/{queue_entry_id}/complete"
+    )
+    assert completion_response.status_code == 200, completion_response.text
+
+    db_session.refresh(telemetry)
+    assert telemetry.completion_time is not None
+    assert telemetry.completion_status == "COMPLETED"
+    assert (
+        telemetry.completion_time - telemetry.arrival_time
+    ).total_seconds() >= 0
+    for stage in (
+        "registration",
+        "unloading",
+        "quality",
+        "weighment",
+        "documentation",
+    ):
+        assert getattr(telemetry, f"{stage}_start") is None
+        assert getattr(telemetry, f"{stage}_end") is None
+
+    repeated_completion = await client.post(
+        f"/api/queue/{queue_entry_id}/complete"
+    )
+    assert repeated_completion.status_code == 409
+    repeated_check_in = await client.post(
+        "/api/queue/check-in",
+        json={"booking_id": booking_id, "centre_id": centre_record.id},
+    )
+    assert repeated_check_in.status_code == 409
+    assert db_session.scalar(
+        select(ProcurementTelemetry.id).where(
+            ProcurementTelemetry.booking_id == booking_id
+        )
+    ) == telemetry.id
+    assert db_session.scalar(
+        select(ProcurementTelemetry).where(
+            ProcurementTelemetry.booking_id == booking_id
+        )
+    ).completion_status == "COMPLETED"
 
 
 @pytest.mark.anyio
