@@ -3,6 +3,7 @@ from fastapi import APIRouter
 from app.api.routers import (
     admin,
     auth,
+    baseline_evaluation,
     bookings,
     centres,
     farmers,
@@ -44,6 +45,11 @@ api_router.include_router(
     tags=["procurement-telemetry"],
 )
 api_router.include_router(prediction.router, prefix="/predictions", tags=["predictions"])
+api_router.include_router(
+    baseline_evaluation.router,
+    prefix="/baseline-evaluation",
+    tags=["baseline-evaluation"],
+)
 api_router.include_router(
     telemetry_dataset.router,
     prefix="/telemetry-dataset",

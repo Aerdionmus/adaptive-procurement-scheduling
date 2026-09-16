@@ -57,6 +57,7 @@ def _telemetry(
     no_show: bool = False,
     cancellation: bool = False,
     completion_status: str = "COMPLETED",
+    provenance: str = "TEST",
 ) -> ProcurementTelemetryCreate:
     stage_durations = (2, 4, 6, 3, 5)
     cursor = at
@@ -68,6 +69,7 @@ def _telemetry(
         "no_show": no_show,
         "cancellation": cancellation,
         "completion_status": completion_status,
+        "provenance": provenance,
     }
     for stage, duration in zip(prediction.STAGES, stage_durations):
         start = cursor
@@ -102,7 +104,7 @@ def test_valid_labels_exclude_invalid_and_keep_active_separate(db_session: Sessi
     )
     base = datetime(2026, 9, 1, 4, tzinfo=timezone.utc)
     for index in range(3):
-        _add(db_session, _telemetry(centre_id, base + timedelta(days=index)))
+        _add(db_session, _telemetry(centre_id, base + timedelta(days=index), provenance="REAL_OBSERVED"))
     _add(db_session, _telemetry(centre_id, base + timedelta(days=3), no_show=True))
     _add(db_session, _telemetry(centre_id, base + timedelta(days=4), cancellation=True))
     _add(
@@ -129,7 +131,15 @@ def test_stage_median_p50_p90_and_chronological_handling(db_session: Session):
     )
     base = datetime(2026, 9, 1, 4, tzinfo=timezone.utc)
     for index, offset in [(2, 20), (0, 0), (1, 10)]:
-        _add(db_session, _telemetry(centre_id, base + timedelta(days=index), duration_offset=offset))
+        _add(
+            db_session,
+            _telemetry(
+                centre_id,
+                base + timedelta(days=index),
+                duration_offset=offset,
+                provenance="REAL_OBSERVED",
+            ),
+        )
     result = prediction.predict_service_times(db_session, centre_id)
     quality = next(item for item in result.predictions if item.target == "quality")
     assert quality.status == "READY"
@@ -145,7 +155,7 @@ def test_fallback_hierarchy_and_insufficient_data(db_session: Session):
     empty = prediction.predict_service_times(db_session, 999999)
     assert all(item.status == "INSUFFICIENT_DATA" for item in empty.predictions)
     for index in range(3):
-        _add(db_session, _telemetry(second.id, base + timedelta(days=index)))
+        _add(db_session, _telemetry(second.id, base + timedelta(days=index), provenance="REAL_OBSERVED"))
     result = prediction.predict_service_times(db_session, first.id)
     registration = next(item for item in result.predictions if item.target == "registration")
     assert registration.fallback_level == "GLOBAL_STAGE"
@@ -172,6 +182,24 @@ def test_existing_throughput_fallback_and_determinism(db_session: Session):
     throughput = prediction.predict_throughput(db_session, centre_id)
     assert throughput.predicted_minutes_per_lot == 30.0
     assert throughput.reference_context_used == []
+
+
+def test_non_operational_provenance_is_excluded_from_prediction(db_session: Session):
+    centre_id = db_session.scalar(
+        select(ProcurementCentre.id).where(ProcurementCentre.code == "PRED-01")
+    )
+    base = datetime(2026, 9, 1, 4, tzinfo=timezone.utc)
+    for index, provenance in enumerate(("TEST", "SIMULATED", "LEGACY")):
+        _add(
+            db_session,
+            _telemetry(
+                centre_id,
+                base + timedelta(days=index),
+                provenance=provenance,
+            ),
+        )
+    result = prediction.predict_service_times(db_session, centre_id)
+    assert all(item.status == "INSUFFICIENT_DATA" for item in result.predictions)
 
 
 @pytest.mark.anyio

@@ -37,6 +37,7 @@ def _get_or_create(
             if queue_size_at_arrival is None
             else queue_size_at_arrival
         ),
+        provenance="REAL_OBSERVED",
         completion_status="IN_PROGRESS",
     )
     return telemetry_repository.create_telemetry(session, data)

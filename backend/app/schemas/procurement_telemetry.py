@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 STAGES = ("registration", "unloading", "quality", "weighment", "documentation")
+TelemetryProvenance = Literal["REAL_OBSERVED", "LEGACY", "TEST", "SIMULATED"]
 
 
 class ProcurementTelemetryCreate(BaseModel):
@@ -30,6 +31,7 @@ class ProcurementTelemetryCreate(BaseModel):
     documentation_end: datetime | None = None
     completion_time: datetime | None = None
     resource_state: dict[str, Any] | None = None
+    provenance: TelemetryProvenance = "LEGACY"
     no_show: bool = False
     cancellation: bool = False
     completion_status: str = Field(min_length=1, max_length=50)

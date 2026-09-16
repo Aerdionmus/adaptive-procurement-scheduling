@@ -44,6 +44,12 @@ class ProcurementTelemetry(Base):
     documentation_end: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     completion_time: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     resource_state: Mapped[dict[str, Any] | None] = mapped_column(JSON)
+    provenance: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        default="LEGACY",
+        server_default="LEGACY",
+    )
     no_show: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
     cancellation: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
     completion_status: Mapped[str] = mapped_column(String(50), nullable=False)

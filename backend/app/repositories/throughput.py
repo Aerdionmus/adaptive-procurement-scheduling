@@ -7,13 +7,23 @@ from sqlalchemy.orm import Session
 from app.models import QueueEntry, QueueStatus, ThroughputSnapshot
 
 
-def get_latest_snapshot(session: Session, centre_id: int) -> ThroughputSnapshot | None:
-    """Return the most recent throughput snapshot for a centre, if any."""
+def get_latest_snapshot(
+    session: Session,
+    centre_id: int,
+    *,
+    as_of: datetime | None = None,
+    strict_before: bool = False,
+) -> ThroughputSnapshot | None:
+    """Return the newest snapshot available at the requested point in time."""
+    query = select(ThroughputSnapshot).where(ThroughputSnapshot.centre_id == centre_id)
+    if as_of is not None:
+        operator = ThroughputSnapshot.snapshot_at < as_of if strict_before else ThroughputSnapshot.snapshot_at <= as_of
+        query = query.where(operator)
     return session.scalar(
-        select(ThroughputSnapshot)
-        .where(ThroughputSnapshot.centre_id == centre_id)
-        .order_by(ThroughputSnapshot.snapshot_at.desc(), ThroughputSnapshot.id.desc())
-        .limit(1)
+        query.order_by(
+            ThroughputSnapshot.snapshot_at.desc(),
+            ThroughputSnapshot.id.desc(),
+        ).limit(1)
     )
 
 

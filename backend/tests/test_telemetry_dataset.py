@@ -58,6 +58,7 @@ def _full_payload(centre_id: int, booking_id: int | None, at: datetime) -> Procu
         "arrival_time": at,
         "queue_size_at_arrival": 4,
         "completion_status": "COMPLETED",
+        "provenance": "TEST",
         "resource_state": {"quality-1": "available"},
     }
     for stage, minutes in (
@@ -114,6 +115,7 @@ def test_real_queue_workflow_creates_linked_telemetry_and_queue_snapshot(db_sess
     assert entry.booking_id == booking.id
     assert telemetry is not None
     assert telemetry.lot_id == str(booking.id)
+    assert telemetry.provenance == "REAL_OBSERVED"
     assert telemetry.queue_size_at_arrival == 0
     queue_service.call_next_farmer(db_session, centre.id)
     queue_service.start_serving(db_session, entry.id)

@@ -7,6 +7,7 @@ from typing import Callable
 
 from sqlalchemy.orm import Session
 
+from app.core import clock
 from app.models import ProcurementTelemetry
 from app.repositories import procurement_telemetry as telemetry_repository
 from app.repositories import throughput as throughput_repository
@@ -19,6 +20,20 @@ from app.schemas.prediction import (
 STAGES = ("registration", "unloading", "quality", "weighment", "documentation")
 HISTORY_LIMIT = 500
 MINIMUM_SAMPLES = 3
+OPERATIONAL_PROVENANCE = "REAL_OBSERVED"
+
+
+def recent_median(values: list[float]) -> float | None:
+    """Return the deterministic RECENT_MEDIAN central estimate."""
+    if not values:
+        return None
+    ordered = sorted(values)
+    midpoint = len(ordered) // 2
+    if len(ordered) % 2:
+        result = ordered[midpoint]
+    else:
+        result = (ordered[midpoint - 1] + ordered[midpoint]) / 2
+    return round(float(result), 2)
 
 
 @dataclass(frozen=True)
@@ -37,11 +52,16 @@ def _duration_minutes(start: datetime | None, end: datetime | None) -> float | N
 def _valid_completed(row: ProcurementTelemetry) -> bool:
     return (
         row.completion_status.upper() == "COMPLETED"
+        and is_prediction_eligible(row)
         and not row.no_show
         and not row.cancellation
         and row.arrival_time is not None
         and row.completion_time is not None
     )
+
+
+def is_prediction_eligible(row: ProcurementTelemetry) -> bool:
+    return row.provenance == OPERATIONAL_PROVENANCE
 
 
 def _stage_duration(row: ProcurementTelemetry, stage: str) -> float | None:
@@ -104,7 +124,7 @@ def _sample_prediction(
     if not samples:
         predicted = p50 = p90 = None
     else:
-        predicted = _percentile(values, 0.5)
+        predicted = recent_median(values)
         p50 = predicted
         p90 = _percentile(values, 0.9)
     return ServiceTimePrediction(
@@ -152,15 +172,35 @@ def _samples(
     return result
 
 
-def _existing_throughput_samples(
+def throughput_fallback_samples(
     session: Session,
     centre_id: int,
+    *,
+    as_of: datetime | None = None,
+    strict_before: bool = False,
 ) -> list[_Sample]:
-    snapshot = throughput_repository.get_latest_snapshot(session, centre_id)
+    snapshot = throughput_repository.get_latest_snapshot(
+        session,
+        centre_id,
+        as_of=as_of,
+        strict_before=strict_before,
+    )
     if snapshot is None:
         return []
     value = float(Decimal(snapshot.avg_minutes_per_farmer))
     return [_Sample(value, snapshot.snapshot_at)]
+
+
+def select_fallback_samples(
+    centre_samples: list[_Sample],
+    global_samples: list[_Sample],
+    throughput_samples: list[_Sample],
+) -> tuple[list[_Sample], str]:
+    if len(centre_samples) >= MINIMUM_SAMPLES:
+        return centre_samples, "CENTRE_OVERALL"
+    if len(global_samples) >= MINIMUM_SAMPLES:
+        return global_samples, "GLOBAL_STAGE"
+    return throughput_samples, "EXISTING_THROUGHPUT"
 
 
 def predict_service_times(
@@ -190,7 +230,11 @@ def predict_service_times(
             samples = global_stage
             fallback_level = "GLOBAL_STAGE"
         if len(samples) < MINIMUM_SAMPLES:
-            samples = _existing_throughput_samples(session, centre_id)
+            samples = throughput_fallback_samples(
+                session,
+                centre_id,
+                as_of=clock.utcnow(),
+            )
             fallback_level = "EXISTING_THROUGHPUT"
             method = "EXISTING_THROUGHPUT_FALLBACK"
             source = "THROUGHPUT_SNAPSHOT"
@@ -214,7 +258,11 @@ def predict_service_times(
         active_samples = _samples(global_rows, _active_service_duration)
         active_fallback = "GLOBAL_STAGE"
     if len(active_samples) < MINIMUM_SAMPLES:
-        active_samples = _existing_throughput_samples(session, centre_id)
+        active_samples = throughput_fallback_samples(
+            session,
+            centre_id,
+            as_of=clock.utcnow(),
+        )
         active_fallback = "EXISTING_THROUGHPUT"
         active_method = "EXISTING_THROUGHPUT_FALLBACK"
         active_source = "THROUGHPUT_SNAPSHOT"
@@ -232,15 +280,16 @@ def predict_service_times(
         )
     )
 
-    elapsed_samples = _samples(centre_rows, _elapsed_duration)
-    if len(elapsed_samples) < MINIMUM_SAMPLES:
-        elapsed_samples = _samples(global_rows, _elapsed_duration)
-        elapsed_fallback = "GLOBAL_STAGE"
-    else:
-        elapsed_fallback = "CENTRE_OVERALL"
-    if len(elapsed_samples) < MINIMUM_SAMPLES:
-        elapsed_samples = _existing_throughput_samples(session, centre_id)
-        elapsed_fallback = "EXISTING_THROUGHPUT"
+    elapsed_samples, elapsed_fallback = select_fallback_samples(
+        _samples(centre_rows, _elapsed_duration),
+        _samples(global_rows, _elapsed_duration),
+        throughput_fallback_samples(
+            session,
+            centre_id,
+            as_of=clock.utcnow(),
+        ),
+    )
+    if elapsed_fallback == "EXISTING_THROUGHPUT":
         elapsed_method = "EXISTING_THROUGHPUT_FALLBACK"
         elapsed_source = "THROUGHPUT_SNAPSHOT"
     else:
@@ -264,7 +313,11 @@ def predict_throughput(session: Session, centre_id: int) -> ThroughputPrediction
     samples = _samples(centre_rows, _active_service_duration)
     fallback_level = "CENTRE_OVERALL"
     if len(samples) < MINIMUM_SAMPLES:
-        samples = _existing_throughput_samples(session, centre_id)
+        samples = throughput_fallback_samples(
+            session,
+            centre_id,
+            as_of=clock.utcnow(),
+        )
         fallback_level = "EXISTING_THROUGHPUT"
         method = "EXISTING_THROUGHPUT_FALLBACK"
         source = "THROUGHPUT_SNAPSHOT"
