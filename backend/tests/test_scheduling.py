@@ -26,6 +26,7 @@ from app.models import (
 )
 from app.core import clock
 from app.services.eta import DEFAULT_AVERAGE_SERVICE_MINUTES
+from app.schemas.prediction import ServiceTimePrediction, ServiceTimePredictionResponse
 from tests._auth_helpers import auth_headers, create_admin
 
 # --------------------------------------------------------------------------
@@ -211,6 +212,30 @@ def assert_close_minutes(actual: str, expected_minutes: float, tolerance: float 
     )
 
 
+def ready_arrival_prediction(centre_id: int) -> ServiceTimePredictionResponse:
+    return ServiceTimePredictionResponse(
+        centre_id=centre_id,
+        predictions=[
+            ServiceTimePrediction(
+                centre_id=centre_id,
+                target="total_active_service",
+                predicted_minutes=20,
+                p50_minutes=20,
+                p90_minutes=35,
+                status="READY",
+                confidence="MEDIUM",
+                sample_count=10,
+                method="RECENT_MEDIAN",
+                fallback_level="CENTRE_OVERALL",
+                lookback_start=clock.utcnow(),
+                lookback_end=clock.utcnow(),
+                source="OPERATIONAL_TELEMETRY",
+                reference_context_used=[],
+            )
+        ],
+    )
+
+
 async def check_in(client: AsyncClient, booking: Booking) -> dict[str, object]:
     response = await client.post(
         "/api/queue/check-in",
@@ -218,6 +243,111 @@ async def check_in(client: AsyncClient, booking: Booking) -> dict[str, object]:
     )
     assert response.status_code == 201, response.text
     return response.json()
+
+
+@pytest.mark.anyio
+async def test_sufficient_prediction_calibrates_estimate_without_mutating_booking_or_slot(
+    client: AsyncClient,
+    db_session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    centre_record = centre(db_session)
+    slot = make_slot(db_session, centre_record.id, end_offset=timedelta(days=2))
+    booking = make_booking(
+        db_session,
+        farmer_id=farmer(db_session).id,
+        centre_id=centre_record.id,
+        slot_id=slot.id,
+    )
+    original_capacity = slot.capacity
+    monkeypatch.setattr(
+        "app.services.scheduling.prediction_service.predict_service_times",
+        lambda session, centre_id: ready_arrival_prediction(centre_id),
+    )
+
+    response = await client.get(f"/api/scheduling/bookings/{booking.id}")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["prediction_provenance"] == "PREDICTIVE_CALIBRATION"
+    assert body["prediction_status"] == "READY"
+    assert_close_minutes(body["estimated_wait_minutes"], 2840.0)
+    assert body["estimated_completion_time"] == "2026-06-17T11:20:00Z"
+    assert "Estimate provenance: PREDICTIVE_CALIBRATION" in body["explanation"]
+    db_session.refresh(booking)
+    db_session.refresh(slot)
+    assert booking.status == BookingStatus.BOOKED
+    assert slot.capacity == original_capacity
+
+
+@pytest.mark.anyio
+async def test_arrival_prediction_is_not_added_to_observed_queue_delay(
+    client: AsyncClient,
+    db_session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    centre_record = centre(db_session)
+    slot = make_slot(db_session, centre_record.id, end_offset=timedelta(minutes=30))
+    booking = make_booking(
+        db_session,
+        farmer_id=farmer(db_session).id,
+        centre_id=centre_record.id,
+        slot_id=slot.id,
+    )
+    await check_in(client, booking)
+    monkeypatch.setattr(
+        "app.services.scheduling.prediction_service.predict_service_times",
+        lambda session, centre_id: ServiceTimePredictionResponse(
+            centre_id=centre_id,
+            predictions=[
+                ready_arrival_prediction(centre_id).predictions[0].model_copy(
+                    update={"target": "arrival_to_completion"}
+                )
+            ],
+        ),
+    )
+
+    response = await client.get(f"/api/scheduling/bookings/{booking.id}")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["prediction_provenance"] == "LEGACY_ESTIMATOR"
+    assert body["prediction_status"] is None
+
+
+@pytest.mark.anyio
+async def test_live_eta_queue_delay_plus_predicted_service_is_not_double_counted(
+    client: AsyncClient,
+    db_session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    centre_record = centre(db_session)
+    slot = make_slot(db_session, centre_record.id, end_offset=timedelta(minutes=60))
+    first = make_booking(
+        db_session,
+        farmer_id=farmer(db_session).id,
+        centre_id=centre_record.id,
+        slot_id=slot.id,
+    )
+    second = make_booking(
+        db_session,
+        farmer_id=farmer(db_session, "9000000002").id,
+        centre_id=centre_record.id,
+        slot_id=slot.id,
+    )
+    await check_in(client, first)
+    await check_in(client, second)
+    monkeypatch.setattr(
+        "app.services.scheduling.prediction_service.predict_service_times",
+        lambda session, centre_id: ready_arrival_prediction(centre_id),
+    )
+
+    response = await client.get(f"/api/scheduling/bookings/{second.id}")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert_close_minutes(body["estimated_wait_minutes"], 35.0)
+    assert body["prediction_provenance"] == "PREDICTIVE_CALIBRATION"
 
 
 # --------------------------------------------------------------------------
