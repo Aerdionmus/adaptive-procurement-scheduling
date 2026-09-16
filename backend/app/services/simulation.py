@@ -25,6 +25,7 @@ from app.services.scheduling import (
     classify_completion,
     recommend_for_status,
 )
+from app.services.completion_window import adapt_completion_window
 
 STAGES = ("registration", "unloading/sampling", "quality", "weighment", "documentation")
 STAGE_RESOURCES = {
@@ -545,6 +546,12 @@ class SimulationEngine:
             for stage in STAGES
         }
         earliest = max(stage_bounds.values(), default=0)
+        active_stage_bounds = [bound for bound in stage_bounds.values() if bound > 0]
+        baseline_service_minutes = min(active_stage_bounds, default=0)
+        workload_delay_minutes = round(
+            max(0, earliest - baseline_service_minutes),
+            2,
+        )
         age = observed.get("data_age_minutes", 0)
         outage_penalty = 20 if observed.get("centre_status", {}).get(self.centre_key) != "OPEN" else sum(
             10
@@ -557,6 +564,8 @@ class SimulationEngine:
         return {
             "earliest_minutes": round(earliest, 2),
             "latest_minutes": round(earliest + uncertainty, 2),
+            "baseline_service_minutes": round(baseline_service_minutes, 2),
+            "workload_delay_minutes": workload_delay_minutes,
             "lower_timestamp": _iso(lower),
             "upper_timestamp": _iso(upper),
             "p50_timestamp": _iso(at + timedelta(minutes=earliest + uncertainty * 0.25)),
@@ -574,7 +583,7 @@ class SimulationEngine:
     def _decision_trace(self, at: datetime) -> None:
         if not self._observed:
             self._observe(at)
-        estimate = self._estimate(at)
+        estimate = adapt_completion_window(self._estimate(at), at=at)
         slot_end = self.horizon_end
         estimated_completion = datetime.fromisoformat(estimate["upper_timestamp"])
         assessment = classify_completion(estimated_completion, slot_end).value
