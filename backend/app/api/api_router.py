@@ -9,6 +9,7 @@ from app.api.routers import (
     notifications,
     procurement_telemetry,
     prediction,
+    telemetry_dataset,
     queue,
     reference,
     scheduling,
@@ -43,4 +44,9 @@ api_router.include_router(
     tags=["procurement-telemetry"],
 )
 api_router.include_router(prediction.router, prefix="/predictions", tags=["predictions"])
+api_router.include_router(
+    telemetry_dataset.router,
+    prefix="/telemetry-dataset",
+    tags=["telemetry-dataset"],
+)
 api_router.include_router(simulation.router, prefix="/simulation", tags=["simulation"])

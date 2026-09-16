@@ -13,6 +13,7 @@ class ProcurementTelemetryCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     lot_id: str = Field(min_length=1, max_length=100)
+    booking_id: int | None = Field(default=None, gt=0)
     centre_id: int = Field(gt=0)
     scheduled_slot: str | None = Field(default=None, max_length=100)
     arrival_time: datetime | None = None

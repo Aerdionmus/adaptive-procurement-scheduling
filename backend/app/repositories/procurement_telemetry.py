@@ -20,6 +20,18 @@ def get_telemetry(session: Session, telemetry_id: int) -> ProcurementTelemetry |
     return session.get(ProcurementTelemetry, telemetry_id)
 
 
+def get_telemetry_for_booking(
+    session: Session,
+    booking_id: int,
+) -> ProcurementTelemetry | None:
+    return session.scalar(
+        select(ProcurementTelemetry)
+        .where(ProcurementTelemetry.booking_id == booking_id)
+        .order_by(ProcurementTelemetry.id.desc())
+        .limit(1)
+    )
+
+
 def list_telemetry(session: Session, centre_id: int) -> list[ProcurementTelemetry]:
     return list(
         session.scalars(
