@@ -12,6 +12,7 @@ from app.models.domain import (
     ThroughputSnapshot,
 )
 from app.models.reference import DATA_STATUS_VALUES, ReferenceDataset
+from app.models.procurement_telemetry import ProcurementTelemetry
 
 __all__ = [
     "Farmer",
@@ -28,4 +29,5 @@ __all__ = [
     "UserRole",
     "ReferenceDataset",
     "DATA_STATUS_VALUES",
+    "ProcurementTelemetry",
 ]
