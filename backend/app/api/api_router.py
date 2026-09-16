@@ -8,6 +8,7 @@ from app.api.routers import (
     farmers,
     notifications,
     procurement_telemetry,
+    prediction,
     queue,
     reference,
     scheduling,
@@ -41,4 +42,5 @@ api_router.include_router(
     prefix="/procurement-telemetry",
     tags=["procurement-telemetry"],
 )
+api_router.include_router(prediction.router, prefix="/predictions", tags=["predictions"])
 api_router.include_router(simulation.router, prefix="/simulation", tags=["simulation"])
