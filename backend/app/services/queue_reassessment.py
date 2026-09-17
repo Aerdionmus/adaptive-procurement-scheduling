@@ -28,6 +28,15 @@ def reassess_after_completion(session: Session, centre_id: int) -> ReassessmentR
     # throughput). Refresh ORM state before prediction-backed assessment so
     # every telemetry timestamp comes from the same committed representation,
     # including SQLite's timezone-naive test representation.
+    return _reassess_pending_bookings(session, centre_id)
+
+
+def reassess_after_check_in(session: Session, centre_id: int) -> ReassessmentResult:
+    """Persist fresh decisions after a check-in transaction commits."""
+    return _reassess_pending_bookings(session, centre_id)
+
+
+def _reassess_pending_bookings(session: Session, centre_id: int) -> ReassessmentResult:
     session.expire_all()
     bookings = booking_repository.list_pending_bookings_for_centre(session, centre_id)
     reassessed_booking_ids: list[int] = []

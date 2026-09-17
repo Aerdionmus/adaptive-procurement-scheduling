@@ -40,11 +40,13 @@ async def check_in_booking(
         current_user, farmer_id=booking.farmer_id, centre_id=check_in_data.centre_id
     )
     try:
-        return queue_service.check_in_booking(
+        queue_entry = queue_service.check_in_booking(
             session,
             check_in_data.booking_id,
             check_in_data.centre_id,
         )
+        queue_reassessment.reassess_after_check_in(session, queue_entry.centre_id)
+        return queue_entry
     except queue_service.QueueError as error:
         _raise_queue_error(error)
 
