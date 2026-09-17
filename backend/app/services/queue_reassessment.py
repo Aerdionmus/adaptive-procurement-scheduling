@@ -36,6 +36,16 @@ def reassess_after_check_in(session: Session, centre_id: int) -> ReassessmentRes
     return _reassess_pending_bookings(session, centre_id)
 
 
+def reassess_after_start_serving(session: Session, centre_id: int) -> ReassessmentResult:
+    """Persist fresh decisions after serving starts and commits."""
+    return _reassess_pending_bookings(session, centre_id)
+
+
+def reassess_after_no_show(session: Session, centre_id: int) -> ReassessmentResult:
+    """Persist fresh decisions after a no-show leaves the live queue."""
+    return _reassess_pending_bookings(session, centre_id)
+
+
 def _reassess_pending_bookings(session: Session, centre_id: int) -> ReassessmentResult:
     session.expire_all()
     bookings = booking_repository.list_pending_bookings_for_centre(session, centre_id)

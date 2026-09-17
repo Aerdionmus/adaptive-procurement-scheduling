@@ -106,7 +106,11 @@ async def start_serving(
         raise HTTPException(status_code=404, detail="Queue entry not found")
     ensure_centre_scope(current_user, entry.centre_id)
     try:
-        return queue_service.start_serving(session, queue_entry_id)
+        serving_entry = queue_service.start_serving(session, queue_entry_id)
+        queue_reassessment.reassess_after_start_serving(
+            session, serving_entry.centre_id
+        )
+        return serving_entry
     except queue_service.QueueError as error:
         _raise_queue_error(error)
 
@@ -140,7 +144,11 @@ async def mark_no_show(
         raise HTTPException(status_code=404, detail="Queue entry not found")
     ensure_centre_scope(current_user, entry.centre_id)
     try:
-        return queue_service.mark_no_show(session, queue_entry_id)
+        no_show_entry = queue_service.mark_no_show(session, queue_entry_id)
+        queue_reassessment.reassess_after_no_show(
+            session, no_show_entry.centre_id
+        )
+        return no_show_entry
     except queue_service.QueueError as error:
         _raise_queue_error(error)
 
