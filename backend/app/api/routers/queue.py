@@ -15,6 +15,7 @@ from app.schemas.eta import QueueETAResponse
 from app.schemas.queue import QueueCheckInCreate, QueueEntryResponse
 from app.services import eta as eta_service
 from app.services import queue as queue_service
+from app.services import queue_reassessment
 
 router = APIRouter()
 
@@ -119,7 +120,9 @@ async def complete_service(
         raise HTTPException(status_code=404, detail="Queue entry not found")
     ensure_centre_scope(current_user, entry.centre_id)
     try:
-        return queue_service.complete_service(session, queue_entry_id)
+        completed_entry = queue_service.complete_service(session, queue_entry_id)
+        queue_reassessment.reassess_after_completion(session, completed_entry.centre_id)
+        return completed_entry
     except queue_service.QueueError as error:
         _raise_queue_error(error)
 
