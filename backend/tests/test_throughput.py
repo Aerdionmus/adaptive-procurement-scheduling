@@ -147,6 +147,32 @@ def make_completed_entry(
     return entry
 
 
+def test_latest_snapshot_respects_as_of_boundary(db_session: Session) -> None:
+    centre_record = centre(db_session)
+    earlier = ThroughputSnapshot(
+        centre_id=centre_record.id,
+        avg_minutes_per_farmer=Decimal("12"),
+        snapshot_at=datetime(2026, 11, 2, 9, 0, tzinfo=timezone.utc),
+    )
+    future = ThroughputSnapshot(
+        centre_id=centre_record.id,
+        avg_minutes_per_farmer=Decimal("30"),
+        snapshot_at=datetime(2026, 11, 2, 11, 0, tzinfo=timezone.utc),
+    )
+    db_session.add_all([earlier, future])
+    db_session.commit()
+
+    selected = throughput_repository.get_latest_snapshot(
+        db_session,
+        centre_record.id,
+        as_of=datetime(2026, 11, 2, 10, 0, tzinfo=timezone.utc),
+        strict_before=True,
+    )
+
+    assert selected is not None
+    assert selected.avg_minutes_per_farmer == Decimal("12")
+
+
 # ---------------------------------------------------------------------------
 # Service-layer: calculate_average_service_minutes
 # ---------------------------------------------------------------------------

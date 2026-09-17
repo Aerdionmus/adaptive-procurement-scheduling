@@ -13,7 +13,9 @@ from app.repositories import bookings as booking_repository
 from app.repositories import procurement as procurement_repository
 from app.repositories import queue as queue_repository
 from app.repositories import throughput as throughput_repository
+from app.services import completion_window
 from app.services import eta as eta_service
+from app.services import prediction as prediction_service
 
 # Buffer thresholds (minutes) applied against a booking's slot end time.
 # Mirrors the deterministic, product-specified ADAPT rules: a booking is
@@ -113,6 +115,8 @@ class SchedulingAssessment:
     recommended_centre_id: int | None
     explanation: str
     calculated_at: datetime
+    prediction_status: str | None = None
+    prediction_provenance: str = "LEGACY_ESTIMATOR"
 
 
 def assess_booking(session: Session, booking_id: int) -> SchedulingAssessment:
@@ -178,9 +182,44 @@ def _assess(session: Session, booking: Booking) -> SchedulingAssessment:
         farmers_ahead = forecast_detail.farmers_ahead
         estimated_wait_minutes = forecast_detail.estimated_wait_minutes
 
-    estimated_completion_time = calculated_at + timedelta(
-        minutes=float(estimated_wait_minutes)
+    legacy_completion_minutes = float(estimated_wait_minutes)
+    prediction_status: str | None = None
+    prediction_provenance = "LEGACY_ESTIMATOR"
+    prediction_response = prediction_service.predict_service_times(
+        session, booking.centre_id
     )
+    service_prediction = next(
+        (
+            candidate
+            for candidate in prediction_response.predictions
+            if candidate.target == "total_active_service"
+        ),
+        None,
+    )
+    legacy_window = {
+        "earliest_minutes": legacy_completion_minutes,
+        "latest_minutes": legacy_completion_minutes,
+        "lower_timestamp": (calculated_at + timedelta(minutes=legacy_completion_minutes)).isoformat(),
+        "upper_timestamp": (calculated_at + timedelta(minutes=legacy_completion_minutes)).isoformat(),
+        "p50_timestamp": (calculated_at + timedelta(minutes=legacy_completion_minutes)).isoformat(),
+        "p90_timestamp": (calculated_at + timedelta(minutes=legacy_completion_minutes)).isoformat(),
+        "uncertainty_minutes": 0.0,
+        "baseline_service_minutes": float(average_service_minutes),
+        "workload_delay_minutes": legacy_completion_minutes,
+    }
+    calibrated_window = completion_window.adapt_completion_window(
+        legacy_window,
+        at=calculated_at,
+        prediction=service_prediction,
+    )
+    prediction_status = service_prediction.status if service_prediction else None
+    prediction_provenance = calibrated_window.get("provenance", "LEGACY_ESTIMATOR")
+    estimated_completion_time = calculated_at + timedelta(
+        minutes=float(
+            calibrated_window["earliest_minutes"]
+        )
+    )
+    estimated_wait_minutes = Decimal(str(calibrated_window["earliest_minutes"]))
     slot_end_time = _slot_datetime(slot.slot_date, slot.end_time)
     overrun_minutes = Decimal(
         (estimated_completion_time - slot_end_time).total_seconds()
@@ -217,6 +256,8 @@ def _assess(session: Session, booking: Booking) -> SchedulingAssessment:
         recommendation=recommendation,
         recommended_slot_id=recommended_slot_id,
         recommended_centre_id=recommended_centre_id,
+        prediction_status=prediction_status,
+        prediction_provenance=prediction_provenance,
     )
 
     return SchedulingAssessment(
@@ -235,6 +276,8 @@ def _assess(session: Session, booking: Booking) -> SchedulingAssessment:
         recommended_centre_id=recommended_centre_id,
         explanation=explanation,
         calculated_at=calculated_at,
+        prediction_status=prediction_status,
+        prediction_provenance=prediction_provenance,
     )
 
 
@@ -454,6 +497,8 @@ def _build_explanation(
     recommendation: SchedulingRecommendation,
     recommended_slot_id: int | None,
     recommended_centre_id: int | None,
+    prediction_status: str | None = None,
+    prediction_provenance: str = "LEGACY_ESTIMATOR",
 ) -> str:
     basis = (
         "Forecast: no live queue entry yet, so this projects from current "
@@ -531,4 +576,10 @@ def _build_explanation(
             f"{recommended_slot_id}) with spare capacity."
         )
 
-    return " ".join([basis, estimate_line, classification_line, recommendation_line])
+    prediction_line = (
+        f"Estimate provenance: {prediction_provenance}"
+        + (f" ({prediction_status})." if prediction_status else ".")
+    )
+    return " ".join(
+        [basis, estimate_line, classification_line, recommendation_line, prediction_line]
+    )

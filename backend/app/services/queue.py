@@ -9,6 +9,7 @@ from app.repositories import bookings as booking_repository
 from app.repositories import procurement as procurement_repository
 from app.repositories import queue as queue_repository
 from app.services import throughput as throughput_service
+from app.services import telemetry as telemetry_service
 
 
 @dataclass
@@ -83,6 +84,8 @@ def check_in_booking(session: Session, booking_id: int, centre_id: int) -> Queue
             raise QueueError("Booking is not eligible for check-in", 409)
         _reject_early_check_in(booking)
 
+        arrival_time = clock.utcnow()
+        queue_size_at_arrival = len(queue_repository.list_live_queue(session, centre.id))
         queue_entry = queue_repository.create_queue_entry(
             session,
             QueueEntry(
@@ -90,8 +93,14 @@ def check_in_booking(session: Session, booking_id: int, centre_id: int) -> Queue
                 booking_id=booking.id,
                 token_number=queue_repository.next_token_number(session, centre.id),
                 queue_status=QueueStatus.WAITING,
-                checked_in_at=clock.utcnow(),
+                checked_in_at=arrival_time,
             ),
+        )
+        telemetry_service.record_check_in(
+            session,
+            booking,
+            arrival_time=arrival_time,
+            queue_size_at_arrival=queue_size_at_arrival,
         )
         booking.status = BookingStatus.IN_QUEUE
         session.commit()
@@ -196,6 +205,14 @@ def _transition_queue_entry(
         queue_entry.booking.status = booking_status
         if set_served_at:
             queue_entry.served_at = clock.utcnow()
+        if target_status == QueueStatus.DONE:
+            telemetry_service.record_completion(
+                session,
+                queue_entry.booking,
+                completion_time=clock.utcnow(),
+            )
+        elif target_status == QueueStatus.NO_SHOW:
+            telemetry_service.record_no_show(session, queue_entry.booking)
         session.commit()
         session.refresh(queue_entry)
         return queue_entry

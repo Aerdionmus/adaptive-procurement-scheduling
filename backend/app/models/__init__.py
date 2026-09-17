@@ -12,6 +12,14 @@ from app.models.domain import (
     ThroughputSnapshot,
 )
 from app.models.reference import DATA_STATUS_VALUES, ReferenceDataset
+from app.models.procurement_telemetry import ProcurementTelemetry
+from app.models.scheduling_decision import SchedulingDecision
+from app.models.notification_intent import (
+    NotificationIntent,
+    NotificationIntentChannel,
+    NotificationIntentStatus,
+    NotificationIntentType,
+)
 
 __all__ = [
     "Farmer",
@@ -28,4 +36,10 @@ __all__ = [
     "UserRole",
     "ReferenceDataset",
     "DATA_STATUS_VALUES",
+    "ProcurementTelemetry",
+    "SchedulingDecision",
+    "NotificationIntent",
+    "NotificationIntentType",
+    "NotificationIntentChannel",
+    "NotificationIntentStatus",
 ]

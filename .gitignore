@@ -240,3 +240,5 @@ frontend/dist/
 .DS_Store
 Thumbs.db
 "@ | Set-Content .gitignore
+
+/data/raw/

@@ -30,3 +30,5 @@ class SchedulingAssessmentResponse(BaseModel):
     recommended_centre_id: int | None
     explanation: str
     calculated_at: datetime
+    prediction_status: str | None = None
+    prediction_provenance: str = "LEGACY_ESTIMATOR"

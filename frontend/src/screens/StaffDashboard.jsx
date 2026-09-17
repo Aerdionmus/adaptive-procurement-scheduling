@@ -158,7 +158,12 @@ function StaffDashboardContent({ data, onRefresh }) {
           totalTracked={data.assessments.length}
         />
         <ScheduledBookingsTable bookings={data.assessments} />
-        <AffectedBookingsTable affectedBookings={data.affectedBookings} centres={data.centres} />
+        <AffectedBookingsTable
+          affectedBookings={data.affectedBookings}
+          centres={data.centres}
+          notificationIntentsByBooking={data.notificationIntentsByBooking}
+          onRefresh={onRefresh}
+        />
       </div>
     </div>
   );

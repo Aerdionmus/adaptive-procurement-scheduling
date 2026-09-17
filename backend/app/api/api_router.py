@@ -3,10 +3,14 @@ from fastapi import APIRouter
 from app.api.routers import (
     admin,
     auth,
+    baseline_evaluation,
     bookings,
     centres,
     farmers,
     notifications,
+    procurement_telemetry,
+    prediction,
+    telemetry_dataset,
     queue,
     reference,
     scheduling,
@@ -35,4 +39,20 @@ api_router.include_router(
 )
 api_router.include_router(admin.router, prefix="/admin", tags=["admin"])
 api_router.include_router(reference.router, prefix="/reference", tags=["reference"])
+api_router.include_router(
+    procurement_telemetry.router,
+    prefix="/procurement-telemetry",
+    tags=["procurement-telemetry"],
+)
+api_router.include_router(prediction.router, prefix="/predictions", tags=["predictions"])
+api_router.include_router(
+    baseline_evaluation.router,
+    prefix="/baseline-evaluation",
+    tags=["baseline-evaluation"],
+)
+api_router.include_router(
+    telemetry_dataset.router,
+    prefix="/telemetry-dataset",
+    tags=["telemetry-dataset"],
+)
 api_router.include_router(simulation.router, prefix="/simulation", tags=["simulation"])

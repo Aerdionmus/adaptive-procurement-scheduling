@@ -39,6 +39,27 @@ export const RECOMMENDATION_LABELS = {
   RECOMMEND_ALTERNATE_CENTRE: "Alternative centre recommended",
 };
 
+export const NOTIFICATION_TYPE_LABELS = {
+  FARMER_SLOT_AT_RISK: "Slot may be delayed",
+  FARMER_NEW_SLOT_PROPOSED: "New slot proposed",
+  FARMER_ALTERNATE_CENTRE_PROPOSED: "Alternative centre proposed",
+};
+
+export const NOTIFICATION_STATUS_LABELS = {
+  PENDING: "Pending",
+  PROCESSING: "Processing",
+  DELIVERED: "Delivered",
+  FAILED: "Failed",
+  SENT: "Sent",
+};
+
+export const NOTIFICATION_CHANNEL_LABELS = {
+  SMS: "SMS",
+  WHATSAPP: "WhatsApp",
+  IVR: "IVR",
+  IN_APP: "In-app",
+};
+
 // A single ordered list drives the visual timeline on the Track Procurement
 // screen. `matches` decides which steps are already complete given a
 // booking's current status.

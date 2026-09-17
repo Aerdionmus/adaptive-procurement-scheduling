@@ -104,6 +104,18 @@ export function getCentreProcurementInsights(centreId) {
   return getJson(`/api/centres/${centreId}/procurement-insights`);
 }
 
+export function getBookingDecisions(bookingId) {
+  return getJson(`/api/scheduling/bookings/${bookingId}/decisions`);
+}
+
+export function getBookingNotificationIntents(bookingId) {
+  return getJson(`/api/notifications/bookings/${bookingId}/intents`);
+}
+
+export function deliverNotificationIntent(intentId) {
+  return postJson(`/api/notifications/intents/${intentId}/deliver`, {});
+}
+
 // ---- Staff: queue actions ------------------------------------------------
 // Centre staff console operations. Farmer screens never call these.
 
