@@ -206,8 +206,8 @@ schemas.
 | Administration | `POST /api/admin/users`, throughput read/recalculate endpoints | Admin, with centre scoping for staff reads |
 
 Queue actions are `call-next`, `start-serving`, `complete`, and `no-show`.
-Notifications currently expose only a foundation placeholder endpoint; no
-external SMS, IVR, or push provider is integrated.
+Notifications expose persisted intent history and a local/mock delivery
+workflow; no external SMS, IVR, or push provider is integrated.
 
 ## Running the adaptive scheduling demo
 

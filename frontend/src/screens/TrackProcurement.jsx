@@ -1,11 +1,13 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { BookingSummary } from "../components/BookingSummary";
 import { ETAIndicator } from "../components/ETAIndicator";
 import { QueueStatus } from "../components/QueueStatus";
 import { SchedulingAlert } from "../components/SchedulingAlert";
 import { StatusTimeline } from "../components/StatusTimeline";
 import { ErrorState, LoadingState } from "../components/StateViews";
-import { checkIn } from "../api/endpoints";
+import { AdaptiveDecisionHistory } from "../components/AdaptiveDecisionHistory";
+import { NotificationIntentHistory } from "../components/NotificationIntentHistory";
+import { checkIn, getBookingDecisions, getBookingNotificationIntents } from "../api/endpoints";
 import { ApiError } from "../api/client";
 import { useBookingContext } from "../hooks/useBookingContext";
 import { useSchedulingStatus } from "../hooks/useSchedulingStatus";
@@ -16,8 +18,53 @@ export function TrackProcurement({ bookingId }) {
   const { status: scheduleStatus, loading: scheduleLoading } = useSchedulingStatus(
     status === "ready" ? data : null,
   );
+  const [decisionHistory, setDecisionHistory] = useState([]);
+  const [notificationHistory, setNotificationHistory] = useState([]);
+  const [decisionHistoryLoading, setDecisionHistoryLoading] = useState(false);
+  const [notificationHistoryLoading, setNotificationHistoryLoading] = useState(false);
+  const [decisionHistoryError, setDecisionHistoryError] = useState(null);
+  const [notificationHistoryError, setNotificationHistoryError] = useState(null);
+  const [historyRefreshToken, setHistoryRefreshToken] = useState(0);
   const [checkingIn, setCheckingIn] = useState(false);
   const [checkInError, setCheckInError] = useState(null);
+
+  useEffect(() => {
+    if (!bookingId) {
+      return undefined;
+    }
+
+    let active = true;
+    const resetTimer = setTimeout(() => {
+      if (active) {
+        setDecisionHistory([]);
+        setNotificationHistory([]);
+        setDecisionHistoryError(null);
+        setNotificationHistoryError(null);
+      }
+    }, 0);
+    const decisionLoadingTimer = setTimeout(() => {
+      if (active) setDecisionHistoryLoading(true);
+    }, 0);
+    const notificationLoadingTimer = setTimeout(() => {
+      if (active) setNotificationHistoryLoading(true);
+    }, 0);
+
+    getBookingDecisions(bookingId)
+      .then((decisions) => active && setDecisionHistory(decisions))
+      .catch((error) => active && setDecisionHistoryError(error))
+      .finally(() => active && setDecisionHistoryLoading(false));
+    getBookingNotificationIntents(bookingId)
+      .then((intents) => active && setNotificationHistory(intents))
+      .catch((error) => active && setNotificationHistoryError(error))
+      .finally(() => active && setNotificationHistoryLoading(false));
+
+    return () => {
+      active = false;
+      clearTimeout(resetTimer);
+      clearTimeout(decisionLoadingTimer);
+      clearTimeout(notificationLoadingTimer);
+    };
+  }, [bookingId, historyRefreshToken]);
 
   async function handleCheckIn() {
     setCheckingIn(true);
@@ -25,10 +72,8 @@ export function TrackProcurement({ bookingId }) {
     try {
       await checkIn({ bookingId: data.booking.id, centreId: data.booking.centre_id });
       reload();
+      setHistoryRefreshToken((current) => current + 1);
     } catch (error) {
-      // Surface the backend's own message when it gave us a clear one (e.g.
-      // the early check-in guard), falling back to a generic message for
-      // anything else (network errors, unexpected 5xxs, etc.).
       setCheckInError(
         error instanceof ApiError
           ? error.message
@@ -41,18 +86,14 @@ export function TrackProcurement({ bookingId }) {
 
   function handleReviewRecommendation(recommendation) {
     if (recommendation.type === "PROPOSE_NEW_SLOT") {
-      navigate(
-        `/book?centreId=${data.centre.id}&slotId=${recommendation.slot.id}`,
-      );
+      navigate(`/book?centreId=${data.centre.id}&slotId=${recommendation.slot.id}`);
     } else if (recommendation.type === "RECOMMEND_ALTERNATE_CENTRE") {
-      navigate(
-        `/book?centreId=${recommendation.centre.id}&slotId=${recommendation.slot.id}`,
-      );
+      navigate(`/book?centreId=${recommendation.centre.id}&slotId=${recommendation.slot.id}`);
     }
   }
 
   if (status === "loading") {
-    return <LoadingState label="Loading your procurement status\u2026" />;
+    return <LoadingState label="Loading your procurement status…" />;
   }
 
   if (status === "error") {
@@ -68,12 +109,8 @@ export function TrackProcurement({ bookingId }) {
 
   return (
     <div className="screen screen--track">
-      {/* Two columns on wide screens: progress on the left, live queue /
-          adaptive scheduling on the right. Stacks to a single column on
-          mobile/tablet - no content is reordered, only reflowed. */}
       <div className="screen__track-col">
         <BookingSummary booking={booking} slot={slot} centre={centre} compact />
-
         <StatusTimeline bookingStatus={booking.status} queueStatus={queueEntry?.queue_status} />
 
         {booking.status === "BOOKED" && (
@@ -85,7 +122,7 @@ export function TrackProcurement({ bookingId }) {
               onClick={handleCheckIn}
               disabled={checkingIn}
             >
-              {checkingIn ? "Checking in\u2026" : "Check in at centre"}
+              {checkingIn ? "Checking in…" : "Check in at centre"}
             </button>
             {checkInError && <p className="form__error">{checkInError}</p>}
           </div>
@@ -111,6 +148,19 @@ export function TrackProcurement({ bookingId }) {
         {!scheduleLoading && scheduleStatus && (
           <SchedulingAlert status={scheduleStatus} onReviewRecommendation={handleReviewRecommendation} />
         )}
+
+        <AdaptiveDecisionHistory
+          data={decisionHistory}
+          loading={decisionHistoryLoading}
+          error={decisionHistoryError}
+          onRetry={() => setHistoryRefreshToken((current) => current + 1)}
+        />
+        <NotificationIntentHistory
+          data={notificationHistory}
+          loading={notificationHistoryLoading}
+          error={notificationHistoryError}
+          onRetry={() => setHistoryRefreshToken((current) => current + 1)}
+        />
       </div>
     </div>
   );

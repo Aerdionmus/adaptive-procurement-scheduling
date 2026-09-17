@@ -15,6 +15,7 @@
 
 import { ApiError } from "../api/client";
 import {
+  getBookingNotificationIntents,
   getCentreSchedule,
   getCentreProcurementInsights,
   getLatestThroughput,
@@ -54,6 +55,10 @@ export async function loadStaffDashboard(centreId) {
 
   const centre = centres.find((c) => c.id === centreId) ?? null;
   const assessmentSlots = await loadAssessmentSlots(assessments);
+  const affectedBookingIds = [...new Set(
+    assessments.filter((assessment) => assessment.scheduling_status !== "ON_TRACK").map((assessment) => assessment.booking_id),
+  )];
+  const notificationIntentsByBooking = await loadAffectedBookingNotifications(affectedBookingIds);
 
   // "Currently serving" / "currently called" are not separate backend
   // fields - they're derived by reading queue_status off the live queue
@@ -89,9 +94,28 @@ export async function loadStaffDashboard(centreId) {
     })),
     statusCounts,
     affectedBookings,
+    notificationIntentsByBooking,
     throughput,
     insights,
   };
+}
+
+async function loadAffectedBookingNotifications(bookingIds) {
+  if (bookingIds.length === 0) {
+    return {};
+  }
+
+  const results = await Promise.allSettled(
+    bookingIds.map(async (bookingId) => [bookingId, await getBookingNotificationIntents(bookingId)]),
+  );
+
+  return results.reduce((accumulator, result) => {
+    if (result.status === "fulfilled") {
+      const [bookingId, intents] = result.value;
+      accumulator[bookingId] = intents;
+    }
+    return accumulator;
+  }, {});
 }
 
 async function loadAssessmentSlots(assessments) {
