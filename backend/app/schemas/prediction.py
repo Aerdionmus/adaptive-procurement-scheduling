@@ -68,4 +68,3 @@ class ServiceTimePredictionResponse(BaseModel):
 
     centre_id: int
     predictions: list[ServiceTimePrediction]
-
