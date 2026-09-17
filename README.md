@@ -108,6 +108,22 @@ the flow:
 SchedulingDecision -> NotificationIntent -> delivery adapter
 ```
 
+### Notification delivery (Phase 4B)
+
+Phase 4B uses deterministic local adapters for `IN_APP`, `SMS`, `WHATSAPP`,
+and `IVR`; no external messaging provider or network call is made. Staff and
+administrators can demonstrate delivery with
+`POST /api/notifications/intents/{intent_id}/deliver`. A pending intent is
+atomically claimed as `PROCESSING`, then local processing moves it to
+`DELIVERED` with a deterministic reference. Adapter failure moves it to
+`FAILED`. `SENT` remains reserved for future real-provider acceptance
+semantics. A recent `PROCESSING` intent is not claimable; one older than the
+five-minute local stale threshold can be reclaimed by a later manual delivery
+attempt. There is no automatic retry worker. `DELIVERED` means successful
+completion of local/mock processing, not confirmation from a telecom provider.
+The claim transition is a database conditional update, preventing concurrent
+delivery attempts from both executing successfully.
+
 ## Local setup
 
 **Prerequisites:** Python 3.12+, Node 20+, and a PostgreSQL database (a

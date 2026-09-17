@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from datetime import datetime
+from threading import Barrier
 
 import pytest
 from alembic import command
@@ -13,15 +15,25 @@ from sqlalchemy.orm import Session, sessionmaker
 from app.db.session import get_db
 from app.db.seed import seed_demo_data
 from app.main import app
+from app.delivery.local_adapters import (
+    LocalIvrAdapter,
+    LocalInAppAdapter,
+    LocalSmsAdapter,
+    LocalWhatsAppAdapter,
+    resolve_local_adapter,
+)
 from app.models import (
     Booking,
     Farmer,
+    NotificationIntentChannel,
     NotificationIntent,
     NotificationIntentType,
     ProcurementCentre,
     SchedulingDecision,
 )
+from app.repositories import notification_intents as intent_repository
 from app.services.notification_intents import create_for_decision
+from app.services.notification_delivery import NotificationDeliveryService
 from app.services import notification_intents
 from app.services.scheduling import assess_booking
 from app.services.scheduling_decisions import record_decision
@@ -195,6 +207,179 @@ def test_decision_remains_persisted_when_intent_persistence_fails(
     ).all() == []
 
 
+def test_all_channels_resolve_to_deterministic_local_adapters() -> None:
+    assert isinstance(
+        resolve_local_adapter(NotificationIntentChannel.IN_APP), LocalInAppAdapter
+    )
+    assert isinstance(
+        resolve_local_adapter(NotificationIntentChannel.SMS), LocalSmsAdapter
+    )
+    assert isinstance(
+        resolve_local_adapter(NotificationIntentChannel.WHATSAPP),
+        LocalWhatsAppAdapter,
+    )
+    assert isinstance(
+        resolve_local_adapter(NotificationIntentChannel.IVR), LocalIvrAdapter
+    )
+
+
+def test_delivery_is_deterministic_and_idempotent(db_session: Session) -> None:
+    booking = db_session.scalar(select(Booking).order_by(Booking.id))
+    assert booking is not None
+    intent = create_for_decision(
+        db_session, _decision(db_session, booking, "AT_RISK_PREDICTED_COMPLETION")
+    )
+    assert intent is not None
+
+    service = NotificationDeliveryService()
+    first = service.deliver(db_session, intent.id)
+    second = service.deliver(db_session, intent.id)
+
+    assert first.result.success is True
+    assert first.intent.status.value == "DELIVERED"
+    assert first.result.reference_id == f"local-in_app-{intent.id}"
+    assert second.already_processed is True
+    assert second.result.reference_id == first.result.reference_id
+
+
+def test_forced_adapter_failure_persists_failed_without_retry(
+    db_session: Session,
+) -> None:
+    booking = db_session.scalar(select(Booking).order_by(Booking.id))
+    assert booking is not None
+    intent = create_for_decision(
+        db_session, _decision(db_session, booking, "AT_RISK_PREDICTED_COMPLETION")
+    )
+    assert intent is not None
+
+    service = NotificationDeliveryService(
+        adapter_resolver=lambda channel: resolve_local_adapter(
+            channel, force_failure=True
+        )
+    )
+    outcome = service.deliver(db_session, intent.id)
+
+    assert outcome.result.success is False
+    assert outcome.intent.status.value == "FAILED"
+    assert outcome.intent.failure_reason == "Forced local adapter failure"
+    repeated = service.deliver(db_session, intent.id)
+    assert repeated.already_processed is True
+    assert repeated.result.success is False
+
+
+def test_adapter_exception_transitions_processing_intent_to_failed(
+    db_session: Session,
+) -> None:
+    booking = db_session.scalar(select(Booking).order_by(Booking.id))
+    assert booking is not None
+    intent = create_for_decision(
+        db_session, _decision(db_session, booking, "AT_RISK_PREDICTED_COMPLETION")
+    )
+    assert intent is not None
+
+    class RaisingAdapter:
+        def deliver(self, request):
+            raise RuntimeError("local adapter crashed")
+
+    service = NotificationDeliveryService(
+        adapter_resolver=lambda channel: RaisingAdapter()
+    )
+    with pytest.raises(RuntimeError, match="local adapter crashed"):
+        service.deliver(db_session, intent.id)
+
+    db_session.expire_all()
+    failed = intent_repository.get_by_id(db_session, intent.id)
+    assert failed is not None
+    assert str(failed.status) in {"FAILED", "NotificationIntentStatus.FAILED"}
+    assert failed.failure_reason == "local adapter crashed"
+
+
+def test_competing_sessions_only_one_claim_and_delivery(
+    db_session: Session,
+) -> None:
+    booking = db_session.scalar(select(Booking).order_by(Booking.id))
+    assert booking is not None
+    intent = create_for_decision(
+        db_session, _decision(db_session, booking, "AT_RISK_PREDICTED_COMPLETION")
+    )
+    assert intent is not None
+    barrier = Barrier(2)
+    engine = db_session.get_bind()
+
+    def compete() -> int | None:
+        session = sessionmaker(bind=engine, expire_on_commit=False)()
+        try:
+            barrier.wait()
+            claimed = intent_repository.claim_pending(session, intent.id)
+            return claimed.id if claimed is not None else None
+        finally:
+            session.close()
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        claims = list(executor.map(lambda _: compete(), (1, 2)))
+
+    assert sorted(claims, key=lambda value: value is None) == [intent.id, None]
+    winning_session = sessionmaker(bind=engine, expire_on_commit=False)()
+    try:
+        delivered = intent_repository.mark_delivered(
+            winning_session, intent.id, f"local-in_app-{intent.id}"
+        )
+        assert delivered.status.value == "DELIVERED"
+        assert delivered.provider_reference == f"local-in_app-{intent.id}"
+    finally:
+        winning_session.close()
+
+    final = intent_repository.get_by_id(db_session, intent.id)
+    assert final is not None
+    db_session.expire_all()
+    final = intent_repository.get_by_id(db_session, intent.id)
+    assert final is not None
+    assert final.status.value == "DELIVERED"
+    assert final.provider_reference == f"local-in_app-{intent.id}"
+
+
+def test_recent_processing_intent_cannot_be_reclaimed(db_session: Session) -> None:
+    booking = db_session.scalar(select(Booking).order_by(Booking.id))
+    assert booking is not None
+    intent = create_for_decision(
+        db_session, _decision(db_session, booking, "AT_RISK_PREDICTED_COMPLETION")
+    )
+    assert intent is not None
+    intent.status = "PROCESSING"
+    intent.processing_started_at = datetime.now(timezone.utc)
+    db_session.commit()
+
+    assert intent_repository.claim_pending(db_session, intent.id) is None
+
+
+def test_stale_processing_intent_can_be_reclaimed_and_delivered(
+    db_session: Session,
+) -> None:
+    booking = db_session.scalar(select(Booking).order_by(Booking.id))
+    assert booking is not None
+    intent = create_for_decision(
+        db_session, _decision(db_session, booking, "AT_RISK_PREDICTED_COMPLETION")
+    )
+    assert intent is not None
+    intent.status = "PROCESSING"
+    intent.processing_started_at = datetime.now(timezone.utc) - timedelta(days=1)
+    db_session.commit()
+
+    reclaimed = intent_repository.claim_pending(db_session, intent.id)
+    assert reclaimed is not None
+    assert str(reclaimed.status) in {"PROCESSING", "NotificationIntentStatus.PROCESSING"}
+
+    outcome = NotificationDeliveryService().deliver(db_session, intent.id)
+    assert outcome.already_processed is True
+
+    intent.status = "PROCESSING"
+    intent.processing_started_at = datetime.now(timezone.utc) - timedelta(days=1)
+    db_session.commit()
+    outcome = NotificationDeliveryService().deliver(db_session, intent.id)
+    assert outcome.result.success is True
+    assert outcome.intent.status.value == "DELIVERED"
+
+
 @pytest.mark.anyio
 async def test_booking_intents_endpoint_enforces_farmer_scope(
     client: AsyncClient, db_session: Session
@@ -249,5 +434,33 @@ async def test_booking_intents_endpoint_enforces_staff_centre_scope(
     client.headers.update(auth_headers(staff))
     forbidden = await client.get(
         f"/api/notifications/bookings/{other_booking.id}/intents"
+    )
+    assert forbidden.status_code == 403
+
+
+@pytest.mark.anyio
+async def test_staff_delivery_endpoint_delivers_only_authorized_intent(
+    client: AsyncClient, db_session: Session
+) -> None:
+    booking = db_session.scalar(select(Booking).order_by(Booking.id))
+    assert booking is not None
+    decision = _decision(db_session, booking, "AT_RISK_PREDICTED_COMPLETION")
+    intent = create_for_decision(db_session, decision)
+    assert intent is not None
+
+    response = await client.post(f"/api/notifications/intents/{intent.id}/deliver")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "DELIVERED"
+    assert body["reference_id"] == f"local-in_app-{intent.id}"
+
+    farmer = db_session.get(Farmer, booking.farmer_id)
+    assert farmer is not None
+    farmer_user = create_farmer_user(
+        db_session, farmer, email="intent-delivery-farmer@example.test"
+    )
+    client.headers.update(auth_headers(farmer_user))
+    forbidden = await client.post(
+        f"/api/notifications/intents/{intent.id}/deliver"
     )
     assert forbidden.status_code == 403

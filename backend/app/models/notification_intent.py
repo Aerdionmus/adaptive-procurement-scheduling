@@ -26,6 +26,7 @@ class NotificationIntentChannel(str, enum.Enum):
 
 class NotificationIntentStatus(str, enum.Enum):
     PENDING = "PENDING"
+    PROCESSING = "PROCESSING"
     SENT = "SENT"
     DELIVERED = "DELIVERED"
     FAILED = "FAILED"
@@ -75,4 +76,6 @@ class NotificationIntent(Base):
     )
     sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     delivered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    processing_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     failure_reason: Mapped[str | None] = mapped_column(String(500))
+    provider_reference: Mapped[str | None] = mapped_column(String(120))

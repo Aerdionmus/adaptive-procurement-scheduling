@@ -21,4 +21,17 @@ class NotificationIntentResponse(BaseModel):
     created_at: datetime
     sent_at: datetime | None
     delivered_at: datetime | None
+    processing_started_at: datetime | None
     failure_reason: str | None
+    provider_reference: str | None
+
+
+class NotificationDeliveryResponse(BaseModel):
+    intent_id: int
+    notification_type: str
+    channel: str
+    status: str
+    success: bool
+    reference_id: str | None
+    failure_reason: str | None
+    already_processed: bool = False
