@@ -96,6 +96,18 @@ account (or logs an existing farmer back in), and the centre-dashboard
 route (`#/staff`) is gated behind a `CENTRE_STAFF`/`ADMIN` login. See
 "Demo login accounts" below for out-of-the-box staff/admin credentials.
 
+### Notification intents (Phase 4A)
+
+Persisted `SchedulingDecision` snapshots can produce provider-neutral
+`NotificationIntent` records for farmer-facing adaptive outcomes. Intents are
+read/audit records with an initial `PENDING` state; Phase 4A does not send
+SMS, WhatsApp, IVR, or in-app messages. A future delivery adapter will consume
+the flow:
+
+```text
+SchedulingDecision -> NotificationIntent -> delivery adapter
+```
+
 ## Local setup
 
 **Prerequisites:** Python 3.12+, Node 20+, and a PostgreSQL database (a

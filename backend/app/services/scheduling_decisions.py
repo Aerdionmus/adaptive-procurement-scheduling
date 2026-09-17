@@ -1,5 +1,6 @@
 from app.models import SchedulingDecision
 from app.repositories import scheduling_decisions as decision_repository
+from app.services import notification_intents
 from app.services.scheduling import (
     SchedulingAssessment,
     SchedulingRecommendation,
@@ -20,7 +21,7 @@ def _reason_code(assessment: SchedulingAssessment) -> str:
 
 
 def record_decision(session, assessment: SchedulingAssessment) -> SchedulingDecision:
-    return decision_repository.create_decision(
+    decision = decision_repository.create_decision(
         session,
         SchedulingDecision(
             booking_id=assessment.booking_id,
@@ -42,3 +43,5 @@ def record_decision(session, assessment: SchedulingAssessment) -> SchedulingDeci
             decision_version="v1",
         ),
     )
+    notification_intents.create_for_decision(session, decision)
+    return decision

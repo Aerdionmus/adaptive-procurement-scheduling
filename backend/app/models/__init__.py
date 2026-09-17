@@ -14,6 +14,12 @@ from app.models.domain import (
 from app.models.reference import DATA_STATUS_VALUES, ReferenceDataset
 from app.models.procurement_telemetry import ProcurementTelemetry
 from app.models.scheduling_decision import SchedulingDecision
+from app.models.notification_intent import (
+    NotificationIntent,
+    NotificationIntentChannel,
+    NotificationIntentStatus,
+    NotificationIntentType,
+)
 
 __all__ = [
     "Farmer",
@@ -32,4 +38,8 @@ __all__ = [
     "DATA_STATUS_VALUES",
     "ProcurementTelemetry",
     "SchedulingDecision",
+    "NotificationIntent",
+    "NotificationIntentType",
+    "NotificationIntentChannel",
+    "NotificationIntentStatus",
 ]
